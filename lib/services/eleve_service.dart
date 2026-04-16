@@ -81,9 +81,13 @@ static Future<Map<String, dynamic>> getElevesByClasse(int classeId) async {
         },
         body: jsonEncode(data),
       );
+
+      print('Add Eleve Response: ${response.statusCode}');
+    print('Body: ${response.body}');
       
       return jsonDecode(response.body);
     } catch (e) {
+      print('Erreur addEleve: $e');
       return {'success': false, 'message': e.toString()};
     }
   }

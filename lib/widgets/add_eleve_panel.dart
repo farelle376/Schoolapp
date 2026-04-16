@@ -25,14 +25,20 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
   final _formKey = GlobalKey<FormState>();
   final _nomController = TextEditingController();
   final _prenomController = TextEditingController();
-  final _telephoneController = TextEditingController();
   String _sexe = 'M';
   int? _classeId;
   bool _isLoading = false;
+  
+  // Liste des parents (supports pour 1 ou 2 parents)
+  List<Map<String, dynamic>> _parents = [];
+  int _nombreParents = 1; // 1 ou 2
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialiser avec 1 parent par défaut
+    _ajouterParent();
     
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -58,39 +64,82 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
     _controller.forward();
   }
 
+  void _ajouterParent() {
+    setState(() {
+      _parents.add({
+        'type': 'pere', // 'pere', 'mere', ou 'tuteur'
+        'nom': '',
+        'prenom': '',
+        'telephone': '',
+        'email': '',
+      });
+    });
+  }
+
+  void _supprimerParent(int index) {
+    setState(() {
+      _parents.removeAt(index);
+    });
+  }
+
+  void _mettreAJourParent(int index, String champ, String valeur) {
+    setState(() {
+      _parents[index][champ] = valeur;
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
     _nomController.dispose();
     _prenomController.dispose();
-    _telephoneController.dispose();
     super.dispose();
   }
 
   Future<void> _ajouterEleve() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-
-      final data = {
-        'nom': _nomController.text,
-        'prenom': _prenomController.text,
-        'sexe': _sexe == 'M' ? 'Masculin' : 'Feminin',
-        'telephone': _telephoneController.text,
-        'classe_id': _classeId,
-      };
-
-      final response = await EleveService.addEleve(data);
-
-      setState(() => _isLoading = false);
-
-      if (response['success'] == true) {
-        _showSnackBar('Élève ajouté avec succès', Colors.green);
-        await _controller.reverse();
-        widget.onAdd();
-        if (mounted) Navigator.pop(context);
-      } else {
-        _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
+    // Valider le formulaire principal
+    if (!_formKey.currentState!.validate()) return;
+    
+    // Valider les parents
+    for (int i = 0; i < _parents.length; i++) {
+      final parent = _parents[i];
+      if (parent['nom'].isEmpty || 
+          parent['prenom'].isEmpty || 
+          parent['telephone'].isEmpty) {
+        _showSnackBar('Veuillez remplir tous les champs du parent ${i+1}', Colors.red);
+        return;
       }
+    }
+    
+    setState(() => _isLoading = true);
+
+    final data = {
+      'nom': _nomController.text,
+      'prenom': _prenomController.text,
+      'sexe': _sexe == 'M' ? 'M' : 'F',  // Envoie 'M' ou 'F' comme demandé par l'API
+      'classe_id': _classeId,
+      'parents': _parents.map((parent) => {
+        'type_parent': parent['type'],
+        'nom': parent['nom'],
+        'prenom': parent['prenom'],
+        'telephone': parent['telephone'],
+        'email': parent['email'].isEmpty ? null : parent['email'],
+      }).toList(),
+    };
+
+    print('Données envoyées: $data'); // Pour debug
+
+    final response = await EleveService.addEleve(data);
+
+    setState(() => _isLoading = false);
+
+    if (response['success'] == true) {
+      _showSnackBar('Élève ajouté avec succès', Colors.green);
+      await _controller.reverse();
+      widget.onAdd();
+      if (mounted) Navigator.pop(context);
+    } else {
+      _showSnackBar(response['message'] ?? 'Erreur lors de l\'ajout', Colors.red);
     }
   }
 
@@ -217,20 +266,6 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
                                   ),
                                   const SizedBox(height: 16),
                                   
-                                  // Téléphone
-                                  TextFormField(
-                                    controller: _telephoneController,
-                                    keyboardType: TextInputType.phone,
-                                    decoration: InputDecoration(
-                                      labelText: 'Téléphone',
-                                      prefixIcon: const Icon(Icons.phone),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  
                                   // Sexe
                                   DropdownButtonFormField<String>(
                                     value: _sexe,
@@ -268,6 +303,57 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
                                     onChanged: (value) => setState(() => _classeId = value),
                                     validator: (v) => v == null ? 'Sélectionnez une classe' : null,
                                   ),
+                                  
+                                  const SizedBox(height: 30),
+                                  
+                                  // Section Parents
+                                  const Row(
+                                    children: [
+                                      Icon(Icons.family_restroom, color: Color(0xFF0D2B4E)),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Informations des parents',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  
+                                  // Sélecteur du nombre de parents
+                                  Row(
+                                    children: [
+                                      const Text('Nombre de parents:'),
+                                      const SizedBox(width: 16),
+                                      SegmentedButton<int>(
+                                        segments: const [
+                                          ButtonSegment(value: 1, label: Text('1 Parent')),
+                                          ButtonSegment(value: 2, label: Text('2 Parents')),
+                                        ],
+                                        selected: {_nombreParents},
+                                        onSelectionChanged: (Set<int> selection) {
+                                          setState(() {
+                                            _nombreParents = selection.first;
+                                            // Ajuster le nombre de parents
+                                            while (_parents.length < _nombreParents) {
+                                              _ajouterParent();
+                                            }
+                                            while (_parents.length > _nombreParents) {
+                                              _parents.removeLast();
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  
+                                  // Formulaire pour chaque parent
+                                  ...List.generate(_parents.length, (index) {
+                                    return _buildParentForm(index);
+                                  }),
                                   
                                   const SizedBox(height: 30),
                                   
@@ -313,6 +399,106 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParentForm(int index) {
+    final parent = _parents[index];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Parent ${index + 1}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0D2B4E),
+                    ),
+                  ),
+                ),
+                if (_parents.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _supprimerParent(index),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Type de parent
+            DropdownButtonFormField<String>(
+              value: parent['type'],
+              decoration: const InputDecoration(
+                labelText: 'Type de parent',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'pere', child: Text('Père')),
+                DropdownMenuItem(value: 'mere', child: Text('Mère')),
+                DropdownMenuItem(value: 'tuteur', child: Text('Tuteur')),
+              ],
+              onChanged: (value) => _mettreAJourParent(index, 'type', value!),
+              validator: (v) => v == null ? 'Champ requis' : null,
+            ),
+            const SizedBox(height: 16),
+            
+            // Nom du parent
+            TextFormField(
+              initialValue: parent['nom'],
+              decoration: const InputDecoration(
+                labelText: 'Nom',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => _mettreAJourParent(index, 'nom', value),
+              validator: (v) => v == null || v.isEmpty ? 'Champ requis' : null,
+            ),
+            const SizedBox(height: 16),
+            
+            // Prénom du parent
+            TextFormField(
+              initialValue: parent['prenom'],
+              decoration: const InputDecoration(
+                labelText: 'Prénom',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => _mettreAJourParent(index, 'prenom', value),
+              validator: (v) => v == null || v.isEmpty ? 'Champ requis' : null,
+            ),
+            const SizedBox(height: 16),
+            
+            // Téléphone
+            TextFormField(
+              initialValue: parent['telephone'],
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Téléphone',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => _mettreAJourParent(index, 'telephone', value),
+              validator: (v) => v == null || v.isEmpty ? 'Champ requis' : null,
+            ),
+            const SizedBox(height: 16),
+            
+            // Email
+            TextFormField(
+              initialValue: parent['email'],
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => _mettreAJourParent(index, 'email', value),
+            ),
+          ],
         ),
       ),
     );
