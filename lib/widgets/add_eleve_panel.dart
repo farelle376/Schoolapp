@@ -39,18 +39,20 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
     
     // Initialiser avec 1 parent par défaut
     _ajouterParent();
-    
+
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1500), // Durée de base pour l'apparition
       vsync: this,
     );
     
+    // Apparition lente, disparition rapide
     _slideAnimation = Tween<Offset>(
       begin: const Offset(1, 0),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutCubic,
+      curve: Curves.easeOutCubic,      // Apparition lente
+      reverseCurve: Curves.easeInCubic, // Disparition rapide
     ));
     
     _fadeAnimation = Tween<double>(
@@ -59,15 +61,27 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
     ).animate(CurvedAnimation(
       parent: _controller,
       curve: Curves.easeOut,
+      reverseCurve: Curves.easeIn,
     ));
     
-    _controller.forward();
+    _controller.forward(); // Démarrer l'apparition
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _nomController.dispose();
+    _prenomController.dispose();
+    for (var parent in _parents) {
+      // Nettoyer les contrôleurs si nécessaire
+    }
+    super.dispose();
   }
 
   void _ajouterParent() {
     setState(() {
       _parents.add({
-        'type': 'pere', // 'pere', 'mere', ou 'tuteur'
+        'type': 'pere',
         'nom': '',
         'prenom': '',
         'telephone': '',
@@ -86,14 +100,6 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
     setState(() {
       _parents[index][champ] = valeur;
     });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _nomController.dispose();
-    _prenomController.dispose();
-    super.dispose();
   }
 
   Future<void> _ajouterEleve() async {
@@ -116,7 +122,7 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
     final data = {
       'nom': _nomController.text,
       'prenom': _prenomController.text,
-      'sexe': _sexe == 'M' ? 'M' : 'F',  // Envoie 'M' ou 'F' comme demandé par l'API
+      'sexe': _sexe == 'M' ? 'M' : 'F',
       'classe_id': _classeId,
       'parents': _parents.map((parent) => {
         'type_parent': parent['type'],
@@ -127,7 +133,7 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
       }).toList(),
     };
 
-    print('Données envoyées: $data'); // Pour debug
+    print('Données envoyées: $data');
 
     final response = await EleveService.addEleve(data);
 
@@ -135,7 +141,7 @@ class _AddElevePanelState extends State<AddElevePanel> with SingleTickerProvider
 
     if (response['success'] == true) {
       _showSnackBar('Élève ajouté avec succès', Colors.green);
-      await _controller.reverse();
+      await _controller.reverse(); // Disparition rapide
       widget.onAdd();
       if (mounted) Navigator.pop(context);
     } else {

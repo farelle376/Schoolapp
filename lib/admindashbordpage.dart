@@ -13,6 +13,7 @@ import 'gestbulletin.dart';
 import 'gestion_eleves_page.dart';
 import 'gestion_notes_page.dart';
 import 'parametres_pages.dart';
+import 'gestion_classmat_page.dart';
 import 'gestion_professeurs_page.dart';
 
 
@@ -267,7 +268,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         },
                       ),
                        _buildMenuItem(
-                        icon: Icons.school,
+                        icon: Icons.person_outline,
                         title: 'Gestion des professeur',
                         subtitle: 'Gérer les ajouts, modifications et suppressions',
                         color: const Color.fromARGB(255, 195, 195, 30),
@@ -278,6 +279,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             );
                          },
                       ),
+                        _buildMenuItem(
+                        icon: Icons.class_,
+                        title: 'Classes et Matières',
+                        subtitle: 'Gestion des classes et des matières',
+                        color: const Color.fromARGB(255, 150, 188, 254),
+                         onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => GestionClassmatPage()),
+                            );
+                         },
+                       ),
                       _buildMenuItem(
                         icon: Icons.calendar_today,
                         title: 'Emploi du temps',
@@ -292,7 +305,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       ),
 
                       _buildMenuItem(
-                        icon: Icons.calendar_today,
+                        icon: Icons.grade,
                         title: 'Gestions des notes',
                         subtitle: 'Consulter toutes les notes ',
                         color: const Color.fromARGB(255, 207, 67, 188),

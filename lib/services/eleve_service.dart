@@ -44,7 +44,25 @@ static Future<Map<String, dynamic>> getClasses() async {
     return {'success': false, 'message': e.toString()};
   }
 }
-  
+
+static Future<Map<String, dynamic>> getAllEleves() async {
+  try {
+    final token = await _getToken();
+    final url = Uri.parse('${Constants.baseUrl}/eleves/tous');
+    
+    final response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(const Duration(seconds: 10));
+    
+    return jsonDecode(response.body);
+  } catch (e) {
+    return {'success': false, 'message': e.toString()};
+  }
+}
   // Récupérer les élèves d'une classe
 
 static Future<Map<String, dynamic>> getElevesByClasse(int classeId) async {
@@ -71,7 +89,7 @@ static Future<Map<String, dynamic>> getElevesByClasse(int classeId) async {
   static Future<Map<String, dynamic>> addEleve(Map<String, dynamic> data) async {
     try {
       final token = await _getToken();
-      final url = Uri.parse('${Constants.baseUrl}/admin/eleves');
+      final url = Uri.parse('${Constants.baseUrl}/eleves');
       
       final response = await http.post(
         url,
@@ -96,7 +114,7 @@ static Future<Map<String, dynamic>> getElevesByClasse(int classeId) async {
   static Future<Map<String, dynamic>> updateEleve(int eleveId, Map<String, dynamic> data) async {
     try {
       final token = await _getToken();
-      final url = Uri.parse('${Constants.baseUrl}/admin/eleves/$eleveId');
+      final url = Uri.parse('${Constants.baseUrl}/eleves/$eleveId');
       
       final response = await http.put(
         url,
@@ -117,7 +135,7 @@ static Future<Map<String, dynamic>> getElevesByClasse(int classeId) async {
   static Future<Map<String, dynamic>> deleteEleve(int eleveId) async {
     try {
       final token = await _getToken();
-      final url = Uri.parse('${Constants.baseUrl}/admin/eleves/$eleveId');
+      final url = Uri.parse('${Constants.baseUrl}/eleves/$eleveId');
       
       final response = await http.delete(
         url,

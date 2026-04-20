@@ -29,50 +29,61 @@ class _GestionElevesPageState extends State<GestionElevesPage> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    
-    final classesResponse = await EleveService.getClasses();
-    
-    if (classesResponse['success'] != true) {
-      setState(() => _isLoading = false);
-      _showSnackBar(classesResponse['message'] ?? 'Erreur', Colors.red);
-      return;
-    }
-    
-    setState(() {
-      _classes = List<Map<String, dynamic>>.from(classesResponse['data']);
-    });
-    
-    List<Map<String, dynamic>> tousLesEleves = [];
-    
-    for (var classe in _classes) {
-      final elevesResponse = await EleveService.getElevesByClasse(classe['id']);
-      
-      if (elevesResponse['success'] == true) {
-        final eleves = List<Map<String, dynamic>>.from(elevesResponse['data']);
-        for (var eleve in eleves) {
-          eleve['classe_nom'] = classe['nom'];
-          eleve['classe_id'] = classe['id'];
-        }
-        tousLesEleves.addAll(eleves);
-      }
-    }
+  setState(() => _isLoading = true);
+  
+  // 1. D'abord, charger les classes (rapide)
+  final classesResponse = await EleveService.getClasses();
+  
+  if (classesResponse['success'] != true) {
+    setState(() => _isLoading = false);
+    _showSnackBar(classesResponse['message'] ?? 'Erreur', Colors.red);
+    return;
+  }
+  
+  // Afficher immédiatement les classes
+  setState(() {
+    _classes = List<Map<String, dynamic>>.from(classesResponse['data']);
+    _isLoading = false; // L'écran s'affiche avec les classes mais sans élèves
+  });
+  
+  // 2. Ensuite, charger les élèves en arrière-plan (sans bloquer l'UI)
+  await _loadAllElevesInBackground();
+}
 
-    // ✅ TRI ALPHABÉTIQUE PAR NOM ET PRÉNOM
-    tousLesEleves.sort((a, b) {
-    // Comparer d'abord par nom
+Future<void> _loadAllElevesInBackground() async {
+  print('📚 Chargement des élèves en arrière-plan...');
+  
+  List<Map<String, dynamic>> tousLesEleves = [];
+  
+  // Charger les élèves pour chaque classe
+  for (var classe in _classes) {
+    final elevesResponse = await EleveService.getElevesByClasse(classe['id']);
+    
+    if (elevesResponse['success'] == true) {
+      final eleves = List<Map<String, dynamic>>.from(elevesResponse['data']);
+      for (var eleve in eleves) {
+        eleve['classe_nom'] = classe['nom'];
+        eleve['classe_id'] = classe['id'];
+      }
+      tousLesEleves.addAll(eleves);
+    }
+  }
+  
+  // Tri alphabétique
+  tousLesEleves.sort((a, b) {
     int nomCompare = (a['nom'] ?? '').compareTo(b['nom'] ?? '');
     if (nomCompare != 0) return nomCompare;
-    // Si les noms sont égaux, comparer par prénom
     return (a['prenom'] ?? '').compareTo(b['prenom'] ?? '');
   });
-    
-    setState(() {
-      _allEleves = tousLesEleves;
-      _filteredEleves = tousLesEleves;
-      _isLoading = false;
-    });
-  }
+  
+  // Mettre à jour l'affichage avec les élèves
+  setState(() {
+    _allEleves = tousLesEleves;
+    _filteredEleves = tousLesEleves;
+  });
+  
+  print('✅ ${tousLesEleves.length} élèves chargés en arrière-plan');
+} 
 
   void _filterEleves() {
     setState(() {
@@ -94,136 +105,201 @@ class _GestionElevesPageState extends State<GestionElevesPage> {
     });
   }
 
-  Future<void> _generatePdf() async {
-    if (_selectedClasseId == null) {
-      _showSnackBar('Veuillez sélectionner une classe', Colors.orange);
-      return;
-    }
-    
-    if (_filteredEleves.isEmpty) {
-      _showSnackBar('Aucun élève à exporter', Colors.orange);
-      return;
-    }
-    
-    final pdf = pw.Document();
-    
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Center(
-                child: pw.Text(
-                  'SchoolApp Benin',
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.blue,
+Future<void> _generatePdf() async {
+  if (_selectedClasseId == null) {
+    _showSnackBar('Veuillez sélectionner une classe', Colors.orange);
+    return;
+  }
+  
+  if (_filteredEleves.isEmpty) {
+    _showSnackBar('Aucun élève à exporter', Colors.orange);
+    return;
+  }
+  
+  final pdf = pw.Document();
+  
+  pdf.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      build: (pw.Context context) {
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            // En-tête
+            pw.Center(
+              child: pw.Text(
+                'SchoolApp Benin',
+                style: pw.TextStyle(
+                  fontSize: 24,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Center(
+              child: pw.Text(
+                'Liste des élèves',
+                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              ),
+            ),
+            pw.Center(
+              child: pw.Text(
+                'Classe: ${_selectedClasseNom ?? ''}',
+                style: pw.TextStyle(fontSize: 14),
+              ),
+            ),
+            pw.Center(
+              child: pw.Text(
+                'Date: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
+              ),
+            ),
+            pw.Divider(),
+            pw.SizedBox(height: 20),
+            
+            // Tableau avec toutes les colonnes
+            pw.Table(
+              border: pw.TableBorder.all(),
+              columnWidths: {
+                0: pw.FixedColumnWidth(30),   // N°
+                1: pw.FixedColumnWidth(80),   // Nom
+                2: pw.FixedColumnWidth(80),   // Prénom
+                3: pw.FixedColumnWidth(50),   // Sexe
+                4: pw.FixedColumnWidth(90),   // Tél Papa
+                5: pw.FixedColumnWidth(90),   // Tél Maman
+                6: pw.FixedColumnWidth(120),  // Email Papa
+                7: pw.FixedColumnWidth(120),  // Email Maman
+              },
+              children: [
+                // En-tête du tableau
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.grey300,
                   ),
-                ),
-              ),
-              pw.SizedBox(height: 10),
-              pw.Center(
-                child: pw.Text(
-                  'Liste des élèves',
-                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-              pw.Center(
-                child: pw.Text(
-                  'Classe: ${_selectedClasseNom ?? ''}',
-                  style: pw.TextStyle(fontSize: 14),
-                ),
-              ),
-              pw.Center(
-                child: pw.Text(
-                  'Date: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
-                  style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
-                ),
-              ),
-              pw.Divider(),
-              pw.SizedBox(height: 20),
-              
-              pw.Table(
-                border: pw.TableBorder.all(),
-                columnWidths: {
-                  0: pw.FixedColumnWidth(30),
-                  1: pw.FixedColumnWidth(100),
-                  2: pw.FlexColumnWidth(),
-                  3: pw.FlexColumnWidth(),
-                  4: pw.FixedColumnWidth(40),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey300,
+                  children: [
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('N°', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                     ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Nom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Prénom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Sexe', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Tél Papa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Tél Maman', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Email Papa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.all(8),
+                      child: pw.Text('Email Maman', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                // Lignes du tableau
+                ..._filteredEleves.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final eleve = entry.value;
+                  final sexe = eleve['sexe'] ?? '';
+                  
+                  // Convertir le sexe en texte complet
+                  String sexeTexte = '';
+                  if (sexe == 'M' || sexe == 'Masculin') {
+                    sexeTexte = 'Masculin';
+                  } else if (sexe == 'F' || sexe == 'Feminin') {
+                    sexeTexte = 'Féminin';
+                  } else {
+                    sexeTexte = sexe;
+                  }
+                  
+                  // Récupérer les emails des parents
+                  String emailPapa = '';
+                  String emailMaman = '';
+                  
+                  if (eleve['parents'] != null && eleve['parents'] is List) {
+                    for (var parent in eleve['parents']) {
+                      if (parent['type'] == 'pere') {
+                        emailPapa = parent['email'] ?? '';
+                      } else if (parent['type'] == 'mere') {
+                        emailMaman = parent['email'] ?? '';
+                      }
+                    }
+                  }
+                  
+                  return pw.TableRow(
                     children: [
                       pw.Padding(
-                        padding: pw.EdgeInsets.all(8),
-                        child: pw.Text('N°', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text('${index + 1}', textAlign: pw.TextAlign.center),
                       ),
                       pw.Padding(
-                        padding: pw.EdgeInsets.all(8),
-                        child: pw.Text('Nom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(eleve['nom'] ?? '-'),
                       ),
                       pw.Padding(
-                        padding: pw.EdgeInsets.all(8),
-                        child: pw.Text('Prénom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(eleve['prenom'] ?? '-'),
                       ),
                       pw.Padding(
-                        padding: pw.EdgeInsets.all(8),
-                        child: pw.Text('Sexe', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(sexeTexte, textAlign: pw.TextAlign.center),
+                      ),
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(eleve['num_papa'] ?? '-'),
+                      ),
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(eleve['num_maman'] ?? '-'),
+                      ),
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(emailPapa.isNotEmpty ? emailPapa : '-'),
+                      ),
+                      pw.Padding(
+                        padding: pw.EdgeInsets.all(6),
+                        child: pw.Text(emailMaman.isNotEmpty ? emailMaman : '-'),
                       ),
                     ],
-                  ),
-                  ..._filteredEleves.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final eleve = entry.value;
-                    return pw.TableRow(
-                      children: [
-                        pw.Padding(
-                          padding: pw.EdgeInsets.all(8),
-                          child: pw.Text('${index + 1}'),
-                        ),
-                        pw.Padding(
-                          padding: pw.EdgeInsets.all(8),
-                          child: pw.Text(eleve['nom'] ?? '-'),
-                        ),
-                        pw.Padding(
-                          padding: pw.EdgeInsets.all(8),
-                          child: pw.Text(eleve['prenom'] ?? '-'),
-                        ),
-                        pw.Padding(
-                          padding: pw.EdgeInsets.all(8),
-                          child: pw.Text(eleve['sexe'] == 'M' ? 'M' : 'F'),
-                        ),
-                      ],
-                    );
-                  }),
-                ],
+                  );
+                }),
+              ],
+            ),
+            
+            pw.SizedBox(height: 20),
+            pw.Center(
+              child: pw.Text(
+                'Total: ${_filteredEleves.length} élève(s)',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
               ),
-              
-              pw.SizedBox(height: 20),
-              pw.Center(
-                child: pw.Text(
-                  'Total: ${_filteredEleves.length} élève(s)',
-                  style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    
-    await Printing.sharePdf(
-      bytes: await pdf.save(),
-      filename: 'liste_eleves_${_selectedClasseNom ?? 'classe'}.pdf',
-    );
-  }
+            ),
+          ],
+        );
+      },
+    ),
+  );
+  
+  await Printing.sharePdf(
+    bytes: await pdf.save(),
+    filename: 'liste_eleves_${_selectedClasseNom ?? 'classe'}.pdf',
+  );
+} 
 
 Future<void> _ajouterEleve() async {
   showGeneralDialog(
@@ -331,6 +407,11 @@ Future<void> _ajouterEleve() async {
               onPressed: _generatePdf,
               tooltip: 'Exporter en PDF',
             ),
+            IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _ajouterEleve,
+            tooltip: 'Ajouter un Eleve',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -403,18 +484,6 @@ Future<void> _ajouterEleve() async {
                       const SizedBox(width: 8),
                       _buildFilterChip('Filles', _selectedFilter == 'Filles'),
                       const Spacer(),
-                      ElevatedButton.icon(
-                        onPressed: _ajouterEleve,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Ajouter'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFF47C3C),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -466,6 +535,8 @@ Future<void> _ajouterEleve() async {
                                 DataColumn(label: Text('Nom complet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
                                 DataColumn(label: Text('Sexe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
                                 DataColumn(label: Text('Classe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
+                                DataColumn(label: Text('Email Papa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
+                                DataColumn(label: Text('Email Maman', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
                                 DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
                               ],
                               rows: _filteredEleves.asMap().entries.map((entry) {
@@ -497,6 +568,24 @@ Future<void> _ajouterEleve() async {
                                       ),
                                     ),
                                     DataCell(Text(eleve['classe_nom'] ?? '-', style: TextStyle(color: isDarkMode ? Colors.grey.shade300 : Colors.black87))),
+                                    DataCell(
+                                    Text(eleve['email_papa'] ?? '-', 
+                                    style: TextStyle(
+                                    color: isDarkMode ? Colors.grey.shade300 : Colors.black87,
+                                    fontSize: 11,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    )
+                                    ),
+                                    DataCell(
+                                    Text(eleve['email_maman'] ?? '-', 
+                                    style: TextStyle(
+                                    color: isDarkMode ? Colors.grey.shade300 : Colors.black87,
+                                    fontSize: 11,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    )
+                                    ),
                                     DataCell(
                                       Row(
                                         mainAxisSize: MainAxisSize.min,

@@ -326,22 +326,13 @@ Future<void> _modifierProfesseur(Map<String, dynamic> professeur) async {
                                     DataCell(Text(prof['numero'] ?? '-')),
                                     DataCell(Text(prof['matiere_nom'] ?? '-')),
                                     DataCell(
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          '${prof['classes_count'] ?? 0} classe(s)',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
+                                    Container(
+                                    constraints: const BoxConstraints(maxWidth: 200),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    child: _buildClassesChips(prof['classes_names'] ?? []),
                                     ),
+                                    ),
+
                                     DataCell(
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -370,6 +361,47 @@ Future<void> _modifierProfesseur(Map<String, dynamic> professeur) async {
             ),
     );
   }
+
+  Widget _buildClassesChips(List<dynamic> classesNames) {
+  if (classesNames.isEmpty) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'Aucune classe',
+        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+      ),
+    );
+  }
+  
+  return Wrap(
+    spacing: 4,
+    runSpacing: 4,
+    children: classesNames.map((className) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF47C3C).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFF47C3C).withOpacity(0.3),
+          ),
+        ),
+        child: Text(
+          className.toString(),
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFFF47C3C),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }).toList(),
+  );
+}
 
   Widget _buildStatCard(String title, String value, Color color) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;

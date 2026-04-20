@@ -12,7 +12,6 @@ import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
-import 'kkiapay_payment_screen.dart';
 import '../services/pdf_service.dart';
 import 'package:universal_html/html.dart' as html;
 
@@ -42,7 +41,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
   int _selectedIndex = 0;
   int _selectedScheduleTab = 0;
   bool _isLoading = true;
- Set<int> _downloadingIds = {};
+  Set<int> _downloadingIds = {};
   List<TranchePaiementModel> _tranches = [];
   List<PaiementModel> _historiquePaiements = [];
   bool _isLoadingTranches = true;
@@ -73,474 +72,195 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
     _loadData();
   }
 
-
-Future<void> _loadTranches() async {
-  setState(() {
-    _isLoadingTranches = true;
-  });
-
-  try {
-    final response = await _api.get('/parent/children/${widget.childId}/tranches-paiement');
-    
-    print('📦 Response tranches: $response');
-    
-    if (response['success'] == true) {
-      final List<dynamic> data = response['data'];
-      print('✅ Tranches reçues: ${data.length}');
-      
-      setState(() {
-        _tranches = data.map((json) => TranchePaiementModel.fromJson(json)).toList();
-      });
-    } else {
-      print('❌ Erreur tranches: ${response['message']}');
-    }
-  } catch (e) {
-    print('❌ Erreur chargement tranches: $e');
-  } finally {
+  Future<void> _loadTranches() async {
     setState(() {
-      _isLoadingTranches = false;
+      _isLoadingTranches = true;
     });
-  }
-}
 
-Future<void> _telechargerRecu(PaiementModel paiement) async {
-  if (paiement.id == 0) {
-    _showSnackBar('Reçu non disponible');
-    return;
-  }
-
-  // Ajouter l'ID à l'ensemble des téléchargements en cours
-  setState(() {
-    _downloadingIds.add(paiement.id);
-  });
-
-  try {
-    // Formater la date
-    String dateFormatee = paiement.formattedDate;
-    if (dateFormatee == 'Date non spécifiée') {
-      dateFormatee = DateTime.now().toString().split(' ')[0];
+    try {
+      final response = await _api.get('/parent/children/${widget.childId}/tranches-paiement');
+      
+      print('📦 Response tranches: $response');
+      
+      if (response['success'] == true) {
+        final List<dynamic> data = response['data'];
+        print('✅ Tranches reçues: ${data.length}');
+        
+        setState(() {
+          _tranches = data.map((json) => TranchePaiementModel.fromJson(json)).toList();
+        });
+      } else {
+        print('❌ Erreur tranches: ${response['message']}');
+      }
+    } catch (e) {
+      print('❌ Erreur chargement tranches: $e');
+    } finally {
+      setState(() {
+        _isLoadingTranches = false;
+      });
     }
-    
-    // Générer le PDF
-    final bytes = await PdfService.generateReceiptBytes(
-      reference: paiement.reference,
-      date: dateFormatee,
-      eleveNom: widget.childName.split(' ').last,
-      elevePrenom: widget.childName.split(' ').first,
-      classe: widget.childClass,
-      libelle: paiement.libelle,
-      description: paiement.description ?? 'Frais de scolarité',
-      montant: paiement.montant,
-      modePaiement: _getModePaiementLabel(paiement.modePaiement ?? 'kkiapay'),
+  }
+
+  Future<void> _telechargerRecu(PaiementModel paiement) async {
+    if (paiement.id == 0) {
+      _showSnackBar('Reçu non disponible');
+      return;
+    }
+
+    setState(() {
+      _downloadingIds.add(paiement.id);
+    });
+
+    try {
+      String dateFormatee = paiement.formattedDate;
+      if (dateFormatee == 'Date non spécifiée') {
+        dateFormatee = DateTime.now().toString().split(' ')[0];
+      }
+      
+      final bytes = await PdfService.generateReceiptBytes(
+        reference: paiement.reference,
+        date: dateFormatee,
+        eleveNom: widget.childName.split(' ').last,
+        elevePrenom: widget.childName.split(' ').first,
+        classe: widget.childClass,
+        libelle: paiement.libelle,
+        description: paiement.description ?? 'Frais de scolarité',
+        montant: paiement.montant,
+        modePaiement: _getModePaiementLabel(paiement.modePaiement ?? 'espèces'),
+      );
+      
+      await PdfService.downloadPdf(bytes, 'recu_${paiement.reference}.pdf');
+      
+      _showSnackBar('✅ Reçu téléchargé avec succès');
+    } catch (e) {
+      print('❌ Erreur: $e');
+      _showSnackBar('Erreur: $e');
+    } finally {
+      setState(() {
+        _downloadingIds.remove(paiement.id);
+      });
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: message.contains('✅') ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
     );
-    
-    // Télécharger le PDF
-    await PdfService.downloadPdf(bytes, 'recu_${paiement.reference}.pdf');
-    
-    _showSnackBar('✅ Reçu téléchargé avec succès');
-    print('📄 Génération du reçu:');
-    print('  - Référence: ${paiement.reference}');
-    print('  - Date: $dateFormatee');
-    print('  - Élève: ${widget.childName}');
-    print('  - Classe: ${widget.childClass}');
-    print('  - Libellé: ${paiement.libelle}');
-    print('  - Montant: ${paiement.montant}');
-    print('  - Mode: ${_getModePaiementLabel(paiement.modePaiement ?? 'kkiapay')}');
-  } catch (e) {
-    print('❌ Erreur: $e');
-    _showSnackBar('Erreur: $e');
-  } finally {
-    // Retirer l'ID de l'ensemble
-    setState(() {
-      _downloadingIds.remove(paiement.id);
-    });
   }
-}
-void _showSnackBar(String message) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      backgroundColor: message.contains('✅') ? Colors.green : Colors.red,
-      duration: const Duration(seconds: 3),
-    ),
-  );
-}
 
-Future<void> _loadHistoriquePaiements() async {
-  setState(() {
-    _isLoadingHistorique = true;
-  });
+  Future<void> _loadHistoriquePaiements() async {
+    setState(() {
+      _isLoadingHistorique = true;
+    });
 
-  try {
-    final response = await _api.get('/parent/children/${widget.childId}/historique-paiements');
-    
-    print('📦 Response historique: $response');
-    
-    if (response['success'] == true) {
-      final List<dynamic> data = response['data'];
-      print('✅ Historique reçu: ${data.length} paiements');
+    try {
+      final response = await _api.get('/parent/children/${widget.childId}/historique-paiements');
       
+      print('📦 Response historique: $response');
+      
+      if (response['success'] == true) {
+        final List<dynamic> data = response['data'];
+        print('✅ Historique reçu: ${data.length} paiements');
+        
+        setState(() {
+          _historiquePaiements = data.map((json) => PaiementModel.fromJson(json)).toList();
+        });
+      } else {
+        print('❌ Erreur historique: ${response['message']}');
+      }
+    } catch (e) {
+      print('❌ Erreur chargement historique: $e');
+    } finally {
       setState(() {
-        _historiquePaiements = data.map((json) => PaiementModel.fromJson(json)).toList();
+        _isLoadingHistorique = false;
       });
-    } else {
-      print('❌ Erreur historique: ${response['message']}');
     }
-  } catch (e) {
-    print('❌ Erreur chargement historique: $e');
-  } finally {
-    setState(() {
-      _isLoadingHistorique = false;
-    });
   }
-}
-Widget _buildRecuCard(PaiementModel paiement) {
-  final isPaye = paiement.estValide;
-  final isLoading = _downloadingIds.contains(paiement.id);
-  return Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isPaye ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.receipt,
-              color: isPaye ? Colors.green : Colors.orange,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  paiement.libelle,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  paiement.montantFormatted,
-                  style: const TextStyle(fontSize: 12),
-                ),
-                if (paiement.datePaiement != null)
-                  Text(
-                    'Payé le: ${paiement.formattedDate}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-                if (paiement.modePaiement != null)
-                  Text(
-                    'Mode: ${_getModePaiementLabel(paiement.modePaiement!)}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-              ],
-            ),
-          ),
-          // Bouton de téléchargement avec indicateur
-          isLoading
-              ? const SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFFF47C3C),
-                    ),
-                  ),
-                )
-              : IconButton(
-                  icon: const Icon(Icons.download, color: Colors.blue),
-                  onPressed: () => _telechargerRecu(paiement),
-                  tooltip: 'Télécharger',
-                ),
-        ],
+
+  Widget _buildRecuCard(PaiementModel paiement) {
+    final isPaye = paiement.estValide;
+    final isLoading = _downloadingIds.contains(paiement.id);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
       ),
-    ),
-  );
-}
-
-
-Future<void> _initierPaiement(TranchePaiementModel tranche) async {
-  // Créer les contrôleurs pour le dialogue
-  final nameController = TextEditingController();
-  final emailController = TextEditingController();
-  final phoneController = TextEditingController();
-
-  final result = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: const Text(
-        'Paiement sécurisé',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF0D2B4E),
-        ),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
           children: [
-            // Logo KKiaPay
             Container(
-              height: 60,
-              child: Image.network(
-                'https://kkiapay.me/img/logo.png',
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.credit_card,
-                  size: 40,
-                  color: Color(0xFFF47C3C),
-                ),
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: isPaye ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.receipt,
+                color: isPaye ? Colors.green : Colors.orange,
+                size: 28,
               ),
             ),
-            const SizedBox(height: 16),
-            // Montant
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF47C3C).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Montant à payer :',
-                    style: TextStyle(fontSize: 16),
-                  ),
                   Text(
-                    '${tranche.montant.toStringAsFixed(0)} FCFA',
+                    paiement.libelle,
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFFF47C3C),
                     ),
                   ),
+                  Text(
+                    paiement.montantFormatted,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (paiement.datePaiement != null)
+                    Text(
+                      'Payé le: ${paiement.formattedDate}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                  if (paiement.modePaiement != null)
+                    Text(
+                      'Mode: ${_getModePaiementLabel(paiement.modePaiement!)}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            // Champ Nom complet
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nom complet',
-                hintText: 'Entrez votre nom et prénom',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Champ Email
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Adresse email',
-                hintText: 'exemple@email.com',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Champ Téléphone
-            TextField(
-              controller: phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Numéro de téléphone',
-                hintText: 'Ex: 97123456',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.phone),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Vous allez être redirigé vers la page de paiement sécurisé',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
+            isLoading
+                ? const SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFF47C3C),
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.download, color: Colors.blue),
+                    onPressed: () => _telechargerRecu(paiement),
+                    tooltip: 'Télécharger',
+                  ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            if (nameController.text.isEmpty ||
-                emailController.text.isEmpty ||
-                phoneController.text.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Veuillez remplir tous les champs'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-            // Sauvegarder les informations dans parentData
-            final parentData = widget.parentData;
-            parentData['prenom'] = nameController.text;
-            parentData['email'] = emailController.text;
-            parentData['telephone'] = phoneController.text;
-            
-            Navigator.pop(context, true);
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFF47C3C),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(25),
-            ),
-          ),
-          child: const Text('PAYER'),
-        ),
-      ],
-    ),
-  );
-
-  if (result == true) {
-    // Appeler la méthode de paiement avec UN SEUL paramètre
-    await _initierPaiementKKiaPay(tranche);
-  }
-}
-
-
-// lib/screens/studentdashboardpage.dart
-
-Future<void> _initierPaiementKKiaPay(TranchePaiementModel tranche) async {
-  setState(() {
-    _paiementEnCours = tranche.id;
-  });
-
-  try {
-    final parentData = widget.parentData;
-    
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => KkiapayPaymentScreen(
-          amount: tranche.montant.toStringAsFixed(0),
-          phone: parentData['telephone'] ?? '97000000',
-          name: parentData['prenom'] ?? 'Parent',
-          email: parentData['email'] ?? 'parent@schoolapp.com',
-          trancheId: tranche.id,
-        ),
-      ),
     );
-    
-    print('📦 Résultat paiement: $result');
-    
-    if (result != null && result['success'] == true) {
-      // Vérifier le paiement avec le backend
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-      
-      final verification = await _api.post('/parent/verifier-paiement', {
-        'transaction_id': result['transactionId'],
-        'tranche_id': tranche.id,
-      });
-      
-      if (mounted) Navigator.pop(context);
-      
-      if (verification['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Paiement réussi !'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        await _loadTranches();
-        await _loadHistoriquePaiements();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(verification['message'] ?? '❌ Erreur lors de la vérification'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  } catch (e) {
-    print('❌ Erreur: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
-    );
-  } finally {
-    setState(() {
-      _paiementEnCours = null;
-    });
   }
-}
-Future<void> _launchUrl(String url) async {
-  final Uri uri = Uri.parse(url);
-  try {
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-    } else {
-      _showSnackBar('Impossible d\'ouvrir le lien de paiement');
-    }
-  } catch (e) {
-    print('Erreur lancement URL: $e');
-    _showSnackBar('Erreur: $e');
+
+  Future<void> _initierPaiement(TranchePaiementModel tranche) async {
+    // Afficher un dialogue simple pour le paiement (sans KKiaPay)
+    _showSnackBar('⚠️ Fonctionnalité de paiement en cours de développement');
   }
-}
-
-
-Future<String?> _showTelephoneDialog() async {
-  final controller = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Numéro de téléphone'),
-      content: TextField(
-        controller: controller,
-        keyboardType: TextInputType.phone,
-        decoration: const InputDecoration(
-          hintText: 'Ex: 771234567',
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, controller.text),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFF47C3C),
-          ),
-          child: const Text('Valider'),
-        ),
-      ],
-    ),
-  );
-}
-
 
   Future<void> _loadData() async {
     setState(() {
@@ -1182,21 +902,20 @@ Future<String?> _showTelephoneDialog() async {
                           Icon(Icons.grade, size: 14, color: _getMoyenneColor(_moyenneGenerale)),
                           const SizedBox(width: 4),
                           Text(
-                            'Moy: ${_moyenneGenerale.toStringAsFixed(1)}/20'
-                            'Moy: --/20',
+                            'Moy: ${_moyenneGenerale.toStringAsFixed(1)}/20',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _getMoyenneColor(_moyenneGenerale)),
                           ),
                         ],
                       ),
                       Text(
-                      _rangGeneral != null 
-                          ? 'Rang: $_rangGeneral/$_totalEleves' 
-                          : 'Rang: --/${_totalEleves ?? 0}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _rangGeneral != null ? Colors.grey[600] : Colors.grey[400],
+                        _rangGeneral != null 
+                            ? 'Rang: $_rangGeneral/$_totalEleves' 
+                            : 'Rang: --/${_totalEleves ?? 0}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: _rangGeneral != null ? Colors.grey[600] : Colors.grey[400],
+                        ),
                       ),
-                    ),
                     ],
                   ),
                 ),
@@ -1296,16 +1015,16 @@ Future<String?> _showTelephoneDialog() async {
                 child: Text('En attente', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
               ),
             if (matiere.hasRang)
-             Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'Rang: ${matiere.rangTexte}',  // Affiche "--/25" si pas de rang
-              style: TextStyle(
-                fontSize: 10,
-                color: matiere.hasRang ? Colors.grey[500] : Colors.grey[400],
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Rang: ${matiere.rangTexte}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: matiere.hasRang ? Colors.grey[500] : Colors.grey[400],
+                  ),
+                ),
               ),
-            ),
-          ),
           ],
         ),
         children: [
@@ -1471,173 +1190,173 @@ Future<String?> _showTelephoneDialog() async {
     );
   }
 
-Widget _buildPaymentsList() {
-  print('🏦 Construction liste paiements');
-  print('🏦 Tranches: ${_tranches.length}');
-  print('🏦 Historique: ${_historiquePaiements.length}');
-  
-  // Afficher les détails des tranches
-  for (var t in _tranches) {
-    print('🏦 Tranche: ${t.libelle} - ${t.montant} - ${t.estPaye}');
-  }
-  return SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section des tranches
-        const Text(
-          'Tranches de paiement',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF0D2B4E),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (_isLoadingTranches)
-          const Center(child: CircularProgressIndicator())
-        else if (_tranches.isEmpty)
-          const Center(
-            child: Text('Aucune tranche disponible'),
-          )
-        else
-          ..._tranches.map((tranche) => _buildTrancheCard(tranche)),
-        
-        const SizedBox(height: 24),
-        
-        // Section des reçus
-        const Text(
-          'Historique des paiements',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF0D2B4E),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (_isLoadingHistorique)
-          const Center(child: CircularProgressIndicator())
-        else if (_historiquePaiements.isEmpty)
-          const Center(
-            child: Text('Aucun paiement effectué'),
-          )
-        else
-          ..._historiquePaiements.map((paiement) => _buildRecuCard(paiement)),
-      ],
-    ),
-  );
-}
-
-Widget _buildTrancheCard(TranchePaiementModel tranche) {
-  final isLoading = _paiementEnCours == tranche.id;
-  
-  return Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Padding(
+  Widget _buildPaymentsList() {
+    print('🏦 Construction liste paiements');
+    print('🏦 Tranches: ${_tranches.length}');
+    print('🏦 Historique: ${_historiquePaiements.length}');
+    
+    for (var t in _tranches) {
+      print('🏦 Tranche: ${t.libelle} - ${t.montant} - ${t.estPaye}');
+    }
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                tranche.libelle,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0D2B4E),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: tranche.estPaye
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  tranche.estPaye ? 'Payé' : 'En attente',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: tranche.estPaye ? Colors.green : Colors.orange,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Montant: ${tranche.montantFormatted}',
-            style: const TextStyle(fontSize: 14),
-          ),
-          if (tranche.description != null)
-            Text(
-              tranche.description!,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          // Section des tranches
+          const Text(
+            'Tranches de paiement',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0D2B4E),
             ),
-          if (tranche.dateLimite != null && !tranche.estPaye)
-            Text(
-              'Date limite: ${_formatDate(tranche.dateLimite!)}',
-              style: TextStyle(fontSize: 12, color: Colors.red[400]),
-            ),
+          ),
           const SizedBox(height: 12),
-          if (!tranche.estPaye)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : () => _initierPaiement(tranche), // <-- Appel correct
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF47C3C),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                ),
-                child: isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('PAYER'),
-              ),
+          if (_isLoadingTranches)
+            const Center(child: CircularProgressIndicator())
+          else if (_tranches.isEmpty)
+            const Center(
+              child: Text('Aucune tranche disponible'),
+            )
+          else
+            ..._tranches.map((tranche) => _buildTrancheCard(tranche)),
+          
+          const SizedBox(height: 24),
+          
+          // Section des reçus
+          const Text(
+            'Historique des paiements',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0D2B4E),
             ),
+          ),
+          const SizedBox(height: 12),
+          if (_isLoadingHistorique)
+            const Center(child: CircularProgressIndicator())
+          else if (_historiquePaiements.isEmpty)
+            const Center(
+              child: Text('Aucun paiement effectué'),
+            )
+          else
+            ..._historiquePaiements.map((paiement) => _buildRecuCard(paiement)),
         ],
       ),
-    ),
-  );
-}
-// Ajoutez cette méthode pour formater la date
-String _formatDate(String dateString) {
-  try {
-    final date = DateTime.parse(dateString);
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  } catch (e) {
-    return dateString;
+    );
   }
-}
 
-String _getModePaiementLabel(String mode) {
-  switch (mode) {
-    case 'mobile Money':
-      return 'mobile Money';
-    case 'celtis':
-      return 'celtis';
-    case 'moov':
-      return 'moov';
-    default:
-      return mode;
+  Widget _buildTrancheCard(TranchePaiementModel tranche) {
+    final isLoading = _paiementEnCours == tranche.id;
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  tranche.libelle,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0D2B4E),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: tranche.estPaye
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    tranche.estPaye ? 'Payé' : 'En attente',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: tranche.estPaye ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Montant: ${tranche.montantFormatted}',
+              style: const TextStyle(fontSize: 14),
+            ),
+            if (tranche.description != null)
+              Text(
+                tranche.description!,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            if (tranche.dateLimite != null && !tranche.estPaye)
+              Text(
+                'Date limite: ${_formatDate(tranche.dateLimite!)}',
+                style: TextStyle(fontSize: 12, color: Colors.red[400]),
+              ),
+            const SizedBox(height: 12),
+            if (!tranche.estPaye)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: isLoading ? null : () => _initierPaiement(tranche),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF47C3C),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('PAYER'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
-}
+
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  String _getModePaiementLabel(String mode) {
+    switch (mode) {
+      case 'mobile Money':
+        return 'mobile Money';
+      case 'celtis':
+        return 'celtis';
+      case 'moov':
+        return 'moov';
+      default:
+        return mode;
+    }
+  }
+  
   Color _getMoyenneColor(double moyenne) {
     if (moyenne >= 16) return Colors.green;
     if (moyenne >= 14) return Colors.lightGreen;

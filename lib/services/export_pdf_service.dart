@@ -117,7 +117,7 @@ class ExportPdfService {
                       ),
                       pw.Padding(
                         padding: pw.EdgeInsets.all(8),
-                        child: pw.Text(eleve['sexe'] == 'M' ? 'M' : 'F'),
+                        child: pw.Text(eleve['sexe'] == 'Masculin' ? 'Masculin' : 'Feminin'),
                       ),
                       pw.Padding(
                         padding: pw.EdgeInsets.all(8),

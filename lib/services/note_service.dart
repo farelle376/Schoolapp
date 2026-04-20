@@ -6,6 +6,72 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constant.dart';
 
 class NoteService {
+  static Map<String, dynamic>? _cachedData;
+  static DateTime? _cacheTime;
+  static const _cacheDuration = Duration(minutes: 10);
+  // UN SEUL APPEL pour toutes les données
+  static Future<Map<String, dynamic>> getAllData({bool forceRefresh = false}) async {
+    try {
+      // Vérifier le cache
+      if (!forceRefresh && _cachedData != null && _cacheTime != null) {
+        if (DateTime.now().difference(_cacheTime!) < _cacheDuration) {
+          print('📦 Utilisation du cache');
+          return _cachedData!;
+        }
+      }
+      
+      final token = await _getToken();
+      final url = Uri.parse('${Constants.baseUrl}/admin/dashboard-data');
+      
+      print('🌐 Chargement depuis API...');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      
+      final result = jsonDecode(response.body);
+      
+      if (result['success'] == true) {
+        _cachedData = result;
+        _cacheTime = DateTime.now();
+      }
+      
+      return result;
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+  
+  // Rafraîchir les données
+  static Future<void> refresh() async {
+    _cachedData = null;
+    _cacheTime = null;
+    await getAllData(forceRefresh: true);
+  }
+  
+  // Filtrage LOCAL (ultra rapide)
+  static List<dynamic> filterNotes({
+    required List<dynamic> notes,
+    int? classeId,
+    int? matiereId,
+    int? trimestre,
+  }) {
+    return notes.where((note) {
+      if (classeId != null && note['classe_id'] != classeId) return false;
+      if (matiereId != null && note['matiere_id'] != matiereId) return false;
+      if (trimestre != null && note['trimestre'] != trimestre) return false;
+      return true;
+    }).toList();
+  }
+  
+  static Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('admin_token');
+  }
   // Récupérer toutes les notes (avec filtres optionnels)
   static Future<Map<String, dynamic>> getNotes({
     int? classeId,
@@ -140,9 +206,4 @@ static Future<Map<String, dynamic>> updateNote(int noteId, Map<String, dynamic> 
     return {'success': false, 'message': e.toString()};
   }
 }
-  
-  static Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('admin_token');
-  }
 }

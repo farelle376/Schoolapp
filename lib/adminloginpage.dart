@@ -273,27 +273,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               ),
                             ),
                             SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Checkbox(
-                                  value: _rememberMe,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _rememberMe = value!;
-                                    });
-                                  },
-                                  activeColor: Color(0xFFF47C3C),
-                                ),
-                                Text(
-                                  'Se souvenir de moi',
-                                  style: TextStyle(
-                                    color: Color(0xFF7A7A7A),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 10),
                             Container(
                               width: double.infinity,
                               height: 55,
