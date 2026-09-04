@@ -5,59 +5,52 @@ class ChildModel {
   final String nom;
   final String prenom;
   final String nomComplet;
-  final String classe;
+  final String? classe;
+  final int? classeId; 
+  final int? classeAnneeId;  
+  final String? anneeScolaire;
+  final int? anneeScolaireId;
+  final int? inscriptionId;
   final double? moyenneGenerale;
   final List<dynamic> dernieresNotes;
-  
+
   ChildModel({
     required this.id,
     required this.nom,
     required this.prenom,
     required this.nomComplet,
-    required this.classe,
+    this.classe,
+    this.classeId,
+    this.classeAnneeId,
+    this.anneeScolaire,
+    this.anneeScolaireId,
+    this.inscriptionId,
     this.moyenneGenerale,
     required this.dernieresNotes,
   });
   
   factory ChildModel.fromJson(Map<String, dynamic> json) {
-    // Récupérer les valeurs avec des valeurs par défaut
-    final id = json['id'] ?? 0;
-    final nom = json['nom']?.toString() ?? '';
-    final prenom = json['prenom']?.toString() ?? '';
-    final nomComplet = json['nom_complet']?.toString() ?? '';
-    final classe = json['classe']?.toString() ?? '';
-    
-    double? moyenneGenerale;
-    if (json['moyenne_generale'] != null) {
-      if (json['moyenne_generale'] is double) {
-        moyenneGenerale = json['moyenne_generale'];
-      } else if (json['moyenne_generale'] is int) {
-        moyenneGenerale = (json['moyenne_generale'] as int).toDouble();
-      } else if (json['moyenne_generale'] is String) {
-        moyenneGenerale = double.tryParse(json['moyenne_generale']);
-      }
-    }
-    
-    return ChildModel(
-      id: id,
-      nom: nom,
-      prenom: prenom,
-      nomComplet: nomComplet,
-      classe: classe,
-      moyenneGenerale: moyenneGenerale,
+     return ChildModel(
+      id: json['id'] ?? 0,
+      nom: json['nom']?.toString() ?? '',
+      prenom: json['prenom']?.toString() ?? '',
+      nomComplet: json['nom_complet']?.toString() ?? '',
+      classe: json['classe']?.toString(),
+      classeId: json['classe_id'],
+      classeAnneeId: json['classe_annee_id'],
+      anneeScolaire: json['annee_scolaire']?.toString(),
+      anneeScolaireId: json['annee_scolaire_id'],
+      inscriptionId: json['inscription_id'],
+      moyenneGenerale: json['moyenne_generale']?.toDouble(),
       dernieresNotes: json['dernieres_notes'] ?? [],
     );
   }
   
   // Méthode pour obtenir les initiales
   String getInitiales() {
-    String initiales = '';
-    if (prenom.isNotEmpty) {
-      initiales += prenom[0].toUpperCase();
+    if (prenom.isNotEmpty && nom.isNotEmpty) {
+      return '${prenom[0].toUpperCase()}${nom[0].toUpperCase()}';
     }
-    if (nom.isNotEmpty) {
-      initiales += nom[0].toUpperCase();
-    }
-    return initiales.isEmpty ? '?' : initiales;
+    return '?';
   }
 }

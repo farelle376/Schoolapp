@@ -21,6 +21,15 @@ class InterrogationNote {
       date: json['date']?.toString() ?? '',
     );
   }
+  
+  // ✅ Ajouter une méthode pour créer avec numéro
+  factory InterrogationNote.withNumber(int numero, Map<String, dynamic> json) {
+    return InterrogationNote(
+      numero: numero,
+      note: (json['note'] ?? 0).toDouble(),
+      date: json['date']?.toString() ?? '',
+    );
+  }
 }
 
 class DevoirNote {
@@ -41,8 +50,16 @@ class DevoirNote {
       date: json['date']?.toString() ?? '',
     );
   }
+  
+  // ✅ Ajouter une méthode pour créer avec numéro
+  factory DevoirNote.withNumber(int numero, Map<String, dynamic> json) {
+    return DevoirNote(
+      numero: numero,
+      note: (json['note'] ?? 0).toDouble(),
+      date: json['date']?.toString() ?? '',
+    );
+  }
 }
-
 class DetailsInterrogations {
   final List<InterrogationNote> notes;
   final int nombre;
@@ -124,6 +141,7 @@ class MatiereModel {
     this.details,
     this.notes,
   });
+  
 
   factory MatiereModel.fromJson(Map<String, dynamic> json) {
     return MatiereModel(
@@ -184,4 +202,5 @@ class MatiereModel {
   /// Vérifie si la matière a des notes
   bool get hasNotes => notes != null && notes!.isNotEmpty;
 }
+
   

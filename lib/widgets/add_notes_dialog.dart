@@ -5,13 +5,15 @@ import 'package:flutter/material.dart';
 class AddNotesDialog extends StatefulWidget {
   final int classeId;
   final String className;
-  final List<Map<String, dynamic>> eleves;
+  final int anneeScolaireId;         // ✅ Nouveau : année scolaire (pour l'inscription)
+  final List<Map<String, dynamic>> eleves;  // Chaque élève doit avoir 'inscription_id' et 'full_name'
   final Function(Map<String, dynamic>) onSave;
 
   const AddNotesDialog({
     Key? key,
     required this.classeId,
     required this.className,
+    required this.anneeScolaireId,
     required this.eleves,
     required this.onSave,
   }) : super(key: key);
@@ -44,7 +46,6 @@ class _AddNotesDialogState extends State<AddNotesDialog> {
     super.dispose();
   }
 
-  // ✅ Fonction pour raccourcir le nom
   String _getShortName(String fullName) {
     if (fullName.length > 25) {
       return fullName.substring(0, 22) + '...';
@@ -54,7 +55,6 @@ class _AddNotesDialogState extends State<AddNotesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Raccourcir le nom de la classe
     String shortClassName = widget.className;
     if (shortClassName.length > 20) {
       shortClassName = shortClassName.substring(0, 18) + '...';
@@ -170,7 +170,6 @@ class _AddNotesDialogState extends State<AddNotesDialog> {
                     
                     ...List.generate(widget.eleves.length, (index) {
                       final eleve = widget.eleves[index];
-                      // ✅ Raccourcir le nom de l'élève
                       final shortName = _getShortName(eleve['full_name'] ?? 'Élève');
                       
                       return Card(
@@ -349,10 +348,22 @@ class _AddNotesDialogState extends State<AddNotesDialog> {
     for (int i = 0; i < widget.eleves.length; i++) {
       final noteText = _noteControllers[i]!.text.trim();
       if (noteText.isNotEmpty) {
-        final note = double.tryParse(noteText);
+        // ✅ Accepter la virgule comme séparateur décimal (ex: "14,5")
+        final note = double.tryParse(noteText.replaceAll(',', '.'));
         if (note != null && note >= 0 && note <= 20) {
+          // ✅ Utiliser inscription_id au lieu de eleve_id
+          final inscriptionId = widget.eleves[i]['inscription_id'];
+          if (inscriptionId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Inscription manquante pour ${widget.eleves[i]['full_name']}'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            return;
+          }
           notes.add({
-            'eleve_id': widget.eleves[i]['id'],
+            'inscription_id': inscriptionId,
             'note': note,
           });
         } else {
@@ -406,6 +417,7 @@ class _AddNotesDialogState extends State<AddNotesDialog> {
               setState(() => _isSubmitting = true);
               widget.onSave({
                 'classe_id': widget.classeId,
+                'annee_scolaire_id': widget.anneeScolaireId, // ✅ Inclure l'année
                 'type_note': _typeNote,
                 'trimestre': _trimestre,
                 'notes': notes,

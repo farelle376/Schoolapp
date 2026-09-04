@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'studentDashbordpage.dart';  // ← Utilisez le nom exact de votre fichier
+import 'studentDashbordpage.dart';
 import 'conversations_screen.dart';
 import 'notifications_screen.dart';
 import 'parentloginpage.dart';
@@ -39,6 +39,7 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
         setState(() {
           _unreadNotificationsCount = notifResponse['count'] ?? 0;
         });
+        print('🔔 Notifications non lues: $_unreadNotificationsCount');
       }
       
       final messagesResponse = await _api.get('/parent/conversations/unread-count');
@@ -46,10 +47,16 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
         setState(() {
           _unreadMessagesCount = messagesResponse['count'] ?? 0;
         });
+        print('💬 Messages non lus: $_unreadMessagesCount');
       }
+      
     } catch (e) {
-      print('Erreur chargement compteurs: $e');
+      print('❌ Erreur chargement compteurs: $e');
     }
+  }
+
+  Future<void> _refreshAllCounts() async {
+    await _loadUnreadCounts();
   }
 
   Future<void> _loadChildren() async {
@@ -69,10 +76,11 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
           setState(() {
             _children = response['data'];
           });
+          print('✅ Enfants chargés: ${_children.length}');
         }
       }
     } catch (e) {
-      print('Erreur: $e');
+      print('❌ Erreur: $e');
       if (e.toString().contains('401')) {
         _redirectToLogin();
       }
@@ -117,16 +125,16 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
         backgroundColor: const Color(0xFF0D2B4E),
         elevation: 0,
         actions: [
-          // Badge messages
           Stack(
             children: [
               IconButton(
                 icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => ConversationsScreen()),
-                  ).then((_) => _loadUnreadCounts());
+                  );
+                  await _refreshAllCounts();
                 },
               ),
               if (_unreadMessagesCount > 0)
@@ -135,26 +143,30 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
                   top: 8,
                   child: Container(
                     padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                     child: Text(
                       _unreadMessagesCount > 9 ? '9+' : '$_unreadMessagesCount',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
             ],
           ),
-          // Badge notifications
           Stack(
             children: [
               IconButton(
                 icon: const Icon(Icons.notifications_none, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => NotificationsScreen()),
-                  ).then((_) => _loadUnreadCounts());
+                  );
+                  await _refreshAllCounts();
                 },
               ),
               if (_unreadNotificationsCount > 0)
@@ -163,11 +175,15 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
                   top: 8,
                   child: Container(
                     padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                     child: Text(
                       _unreadNotificationsCount > 9 ? '9+' : '$_unreadNotificationsCount',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -185,7 +201,6 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
         ),
         child: Column(
           children: [
-            // Header
             Container(
               padding: const EdgeInsets.all(20),
               child: Row(
@@ -221,7 +236,6 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
                 ],
               ),
             ),
-            // Titre "Mes enfants"
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Row(
@@ -236,7 +250,6 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
                 ],
               ),
             ),
-            // Liste des enfants
             Expanded(
               child: Container(
                 decoration: const BoxDecoration(
@@ -275,10 +288,17 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
   }
 
   Widget _buildChildCard(Map<String, dynamic> child, int index) {
-    final childId = child['id'] ?? 0;
-    String childName = child['nom_complet'] ?? '${child['prenom'] ?? ''} ${child['nom'] ?? ''}'.trim();
-    if (childName.isEmpty) childName = 'Élève $childId';
+    // ✅ Récupérer l'inscription_id (préféré) ou l'ID de l'élève en fallback
+    final inscriptionId = child['inscription_id'] ?? child['id'];
+    if (inscriptionId == null) {
+      // Si l'API ne renvoie pas d'inscription_id, on affiche un message d'erreur
+      // mais on peut quand même utiliser l'ID de l'élève avec un avertissement.
+      print('⚠️ Aucun inscription_id trouvé pour l\'enfant: ${child['nom_complet'] ?? ''}');
+    }
+
+    final childName = child['nom_complet'] ?? '${child['prenom'] ?? ''} ${child['nom'] ?? ''}'.trim();
     final childClass = child['classe'] ?? 'Classe non assignée';
+    final childId = child['id'] ?? 0; // conservé au cas où
     
     final List<Color> avatarColors = [const Color(0xFFF47C3C), Colors.green, Colors.blue, Colors.purple, Colors.orange];
     final Color avatarColor = avatarColors[index % avatarColors.length];
@@ -289,16 +309,19 @@ class _ChildrenListPageState extends State<ChildrenListPage> {
       elevation: 3,
       child: InkWell(
         onTap: () {
+          // ✅ Navigation avec inscriptionId
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => StudentDashboardPage(  // ← Assurez-vous que c'est le bon nom
-                childId: childId,
+              builder: (context) => StudentDashboardPage(
+                inscriptionId: inscriptionId, 
                 childName: childName,
                 childClass: childClass,
                 parentInitiales: widget.parentData['initiales'] ?? '',
                 parentNom: widget.parentData['prenom'] ?? '',
                 parentData: widget.parentData,
+                // Optionnel: passer childId si besoin
+                childId: childId,
               ),
             ),
           );

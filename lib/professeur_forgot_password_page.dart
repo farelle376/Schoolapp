@@ -10,7 +10,10 @@ class ProfesseurForgotPasswordPage extends StatefulWidget {
 
 class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordPage> {
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _codeController = TextEditingController();
+  // Remplacer le _codeController unique par 6 contrôleurs
+  final List<TextEditingController> _codeControllers = List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _codeFocusNodes = List.generate(6, (_) => FocusNode());
+  
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
   
@@ -18,48 +21,72 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
   int _step = 1; // 1: email, 2: code, 3: new password
   final AuthService _authService = AuthService();
 
+  // 👁️ Pour afficher/masquer les mots de passe
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
+  // ========== MÉTHODES DE SNACKBAR (déplacées en haut) ==========
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
+
+  // ========== MÉTHODES MÉTIER ==========
   Future<void> _sendCode() async {
     if (_emailController.text.isEmpty) {
       _showError('Veuillez entrer votre email');
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    // TODO: Appeler l'API forgotPassword
-    // Pour l'instant, simulation
-    await Future.delayed(Duration(seconds: 1));
+    final result = await _authService.sendProfessorResetCode(_emailController.text);
     
-    setState(() {
-      _isLoading = false;
-      _step = 2;
-    });
-    
-    _showSuccess('Code envoyé à votre email');
+    setState(() => _isLoading = false);
+
+    if (result['success'] == true) {
+      setState(() => _step = 2);
+      _showSuccess(result['message']);
+    } else {
+      _showError(result['message']);
+    }
   }
 
   Future<void> _verifyCode() async {
-    if (_codeController.text.length != 6) {
+    // Récupération du code depuis les 6 cases
+    final String fullCode = _codeControllers.map((c) => c.text).join();
+    if (fullCode.length != 6) {
       _showError('Le code doit contenir 6 chiffres');
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    // TODO: Appeler l'API verifyCode
-    await Future.delayed(Duration(seconds: 1));
+    final result = await _authService.verifyProfessorResetCode(
+      _emailController.text,
+      fullCode,
+    );
     
-    setState(() {
-      _isLoading = false;
-      _step = 3;
-    });
+    setState(() => _isLoading = false);
+
+    if (result['success'] == true) {
+      setState(() => _step = 3);
+      _showSuccess(result['message']);
+    } else {
+      _showError(result['message']);
+    }
   }
 
   Future<void> _resetPassword() async {
+    final String fullCode = _codeControllers.map((c) => c.text).join();
+
     if (_passwordController.text.isEmpty) {
       _showError('Veuillez entrer un nouveau mot de passe');
       return;
@@ -75,36 +102,36 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    // TODO: Appeler l'API resetPassword
-    await Future.delayed(Duration(seconds: 1));
-    
-    setState(() {
-      _isLoading = false;
-    });
-    
-    _showSuccess('Mot de passe réinitialisé avec succès');
-    
-    Future.delayed(Duration(seconds: 2), () {
-      Navigator.pop(context);
-    });
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    // Appel API réel (vous aviez un TODO, je le remplace par l'appel)
+    final result = await _authService.resetProfessorPassword(
+      _emailController.text,
+      fullCode,
+      _passwordController.text,
     );
+    
+    setState(() => _isLoading = false);
+
+    if (result['success'] == true) {
+      _showSuccess(result['message']);
+      Future.delayed(Duration(seconds: 2), () => Navigator.pop(context));
+    } else {
+      _showError(result['message']);
+    }
   }
 
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
-    );
+  @override
+  void dispose() {
+    _emailController.dispose();
+    for (var c in _codeControllers) c.dispose();
+    for (var f in _codeFocusNodes) f.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
   }
 
+  // ========== BUILD ==========
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -130,7 +157,7 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
             ),
             const SizedBox(height: 20),
             
-            // Étape 1: Email
+            // Étape 1: Email (inchangé)
             if (_step == 1) ...[
               const Text(
                 'Réinitialisation du mot de passe',
@@ -185,7 +212,7 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
               ),
             ],
             
-            // Étape 2: Code de vérification
+            // ==================== ÉTAPE 2 : CODE OTP AVEC 6 CASES ====================
             if (_step == 2) ...[
               const Text(
                 'Vérification du code',
@@ -197,18 +224,56 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
                 style: const TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 30),
-              TextField(
-                controller: _codeController,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                decoration: InputDecoration(
-                  labelText: 'Code de vérification',
-                  prefixIcon: const Icon(Icons.security),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
+              
+              // ⬇️ 6 cases (cards)
+         // ⬇️ 6 cases avec fond transparent et bordure uniquement
+              Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: List.generate(6, (index) {
+    return Row(
+      children: [
+        Container(
+          width: 45,
+          height: 55,
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _codeControllers[index].text.isNotEmpty
+                  ? const Color(0xFFF47C3C) // bordure orange si rempli
+                  : Colors.grey[400]!,      // bordure grise
+              width: 2,
+            ),
+          ),
+          child: TextField(
+            controller: _codeControllers[index],
+            focusNode: _codeFocusNodes[index],
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 1,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black, // Chiffre bien noir
+            ),
+            decoration: const InputDecoration(
+              counterText: '',
+              border: InputBorder.none,
+              filled: true,
+              fillColor: Colors.transparent, // ✅ Fond transparent
+            ),
+            onChanged: (value) {
+              if (value.length == 1 && index < 5) {
+                FocusScope.of(context).requestFocus(_codeFocusNodes[index + 1]);
+              } else if (value.isEmpty && index > 0) {
+                FocusScope.of(context).requestFocus(_codeFocusNodes[index - 1]);
+              }
+            },
+          ),
+        ),
+        if (index < 5) const SizedBox(width: 10),
+      ],
+    );
+  }),
+),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -245,7 +310,7 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
               ),
             ],
             
-            // Étape 3: Nouveau mot de passe
+            // ==================== ÉTAPE 3 : MOT DE PASSE AVEC ŒIL ====================
             if (_step == 3) ...[
               const Text(
                 'Nouveau mot de passe',
@@ -257,24 +322,50 @@ class _ProfesseurForgotPasswordPageState extends State<ProfesseurForgotPasswordP
                 style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 30),
+              
+              // Champ mot de passe avec œil
               TextField(
                 controller: _passwordController,
-                obscureText: true,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   labelText: 'Nouveau mot de passe',
                   prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
               const SizedBox(height: 15),
+              
+              // Champ confirmation avec œil
               TextField(
                 controller: _confirmPasswordController,
-                obscureText: true,
+                obscureText: _obscureConfirmPassword,
                 decoration: InputDecoration(
                   labelText: 'Confirmer le mot de passe',
                   prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscureConfirmPassword = !_obscureConfirmPassword;
+                      });
+                    },
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),

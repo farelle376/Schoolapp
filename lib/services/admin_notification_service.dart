@@ -41,13 +41,19 @@ class AdminNotificationService {
       response = await http.delete(url, headers: headers);
     }
 
-    return json.decode(response.body);
+    print('📡 [AdminNotificationService] $method $endpoint -> ${response.statusCode}');
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Erreur ${response.statusCode}: ${response.body}');
+    }
   }
 
   // Notifications
   Future<List<NotificationAdminModel>> getNotifications() async {
     try {
-      final response = await _request('GET', 'notifications');
+      final response = await _request('GET', 'emplois-du-temps/notifications');
       if (response['success'] == true) {
         final List<dynamic> data = response['data'];
         return data.map((json) => NotificationAdminModel.fromJson(json)).toList();
@@ -61,7 +67,7 @@ class AdminNotificationService {
 
   Future<bool> createNotification(Map<String, dynamic> data) async {
     try {
-      final response = await _request('POST', 'notifications', data: data);
+      final response = await _request('POST', 'emplois-du-temps/notifications', data: data);
       return response['success'] == true;
     } catch (e) {
       print('Erreur createNotification: $e');
@@ -71,7 +77,7 @@ class AdminNotificationService {
 
   Future<bool> deleteNotification(int id) async {
     try {
-      final response = await _request('DELETE', 'notifications/$id');
+      final response = await _request('DELETE', 'emplois-du-temps/notifications/$id');
       return response['success'] == true;
     } catch (e) {
       print('Erreur deleteNotification: $e');
@@ -82,7 +88,7 @@ class AdminNotificationService {
   // Parents
   Future<List<Map<String, dynamic>>> getParents() async {
     try {
-      final response = await _request('GET', 'parents');
+      final response = await _request('GET', 'emplois-du-temps/parents-list');
       if (response['success'] == true) {
         return List<Map<String, dynamic>>.from(response['data']);
       }
@@ -96,7 +102,7 @@ class AdminNotificationService {
   // Élèves
   Future<List<Map<String, dynamic>>> getEleves() async {
     try {
-      final response = await _request('GET', 'eleves');
+      final response = await _request('GET', 'emplois-du-temps/eleves-list');
       if (response['success'] == true) {
         return List<Map<String, dynamic>>.from(response['data']);
       }
@@ -110,7 +116,7 @@ class AdminNotificationService {
   // Conversations
   Future<List<ConversationAdminModel>> getConversations() async {
     try {
-      final response = await _request('GET', 'conversations');
+      final response = await _request('GET', 'emplois-du-temps/conversations');
       if (response['success'] == true) {
         final List<dynamic> data = response['data'];
         return data.map((json) => ConversationAdminModel.fromJson(json)).toList();
@@ -124,7 +130,7 @@ class AdminNotificationService {
 
   Future<List<MessageAdminModel>> getMessages(int conversationId) async {
     try {
-      final response = await _request('GET', 'conversations/$conversationId/messages');
+      final response = await _request('GET', 'emplois-du-temps/conversations/$conversationId/messages');
       if (response['success'] == true) {
         final List<dynamic> data = response['data'];
         return data.map((json) => MessageAdminModel.fromJson(json)).toList();
@@ -136,9 +142,24 @@ class AdminNotificationService {
     }
   }
 
+  /// Nombre de messages parents non encore lus par l'admin (toutes
+  /// conversations confondues) — pour la pastille rouge de la barre latérale.
+  Future<int> getUnreadMessagesCount() async {
+    try {
+      final response = await _request('GET', 'emplois-du-temps/conversations/unread-count');
+      if (response['success'] == true) {
+        return response['count'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('Erreur getUnreadMessagesCount: $e');
+      return 0;
+    }
+  }
+
   Future<bool> sendMessage(int conversationId, String message) async {
     try {
-      final response = await _request('POST', 'conversations/$conversationId/messages', data: {
+      final response = await _request('POST', 'emplois-du-temps/conversations/$conversationId/messages', data: {
         'message': message,
       });
       return response['success'] == true;
@@ -147,4 +168,41 @@ class AdminNotificationService {
       return false;
     }
   }
+  Future<bool> sendToAllParents({
+  required String titre,
+  required String message,
+  required String type,
+}) async {
+  try {
+    final response = await _request('POST', 'emplois-du-temps/notifications/send-to-all', data: {
+      'titre': titre,
+      'message': message,
+      'type': type,
+    });
+    return response['success'] == true;
+  } catch (e) {
+    print('❌ Erreur sendToAllParents: $e');
+    return false;
+  }
+}
+
+Future<Map<String, dynamic>> sendToSelectedParents({
+  required List<int> parentIds,
+  required String titre,
+  required String message,
+  required String type,
+}) async {
+  try {
+    final response = await _request('POST', 'emplois-du-temps/notifications/send-to-selected', data: {
+      'parent_ids': parentIds,
+      'titre': titre,
+      'message': message,
+      'type': type,
+    });
+    return response;
+  } catch (e) {
+    print('❌ Erreur sendToSelectedParents: $e');
+    return {'success': false, 'message': e.toString()};
+  }
+}
 }

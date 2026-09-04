@@ -5,6 +5,7 @@ class ConversationAdminModel {
   final String parentPrenom;
   final int? eleveId;
   final String? eleveNom;
+  final String? classe;
   final String sujet;
   final String statut;
   final int messagesNonLus;
@@ -18,6 +19,7 @@ class ConversationAdminModel {
     required this.parentPrenom,
     this.eleveId,
     this.eleveNom,
+    this.classe,
     required this.sujet,
     required this.statut,
     required this.messagesNonLus,
@@ -33,6 +35,7 @@ class ConversationAdminModel {
       parentPrenom: json['parent_prenom']?.toString() ?? '',
       eleveId: json['eleve_id'],
       eleveNom: json['eleve_nom'],
+      classe: json['classe']?.toString(),
       sujet: json['sujet']?.toString() ?? '',
       statut: json['statut']?.toString() ?? 'ouvert',
       messagesNonLus: json['messages_non_lus'] ?? 0,

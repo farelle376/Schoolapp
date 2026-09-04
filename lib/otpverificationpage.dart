@@ -272,7 +272,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(25),
-                    child: Column(
+                    // ⚠️ SingleChildScrollView : quand le clavier s'ouvre
+                    // pour la saisie du code, l'espace vertical disponible
+                    // se réduit et ce Column (titre + champs OTP + bouton)
+                    // débordait ("RenderFlex overflowed"). Avec le scroll,
+                    // le contenu défile au lieu de déborder.
+                    child: SingleChildScrollView(
+                      child: Column(
                       children: [
                         const SizedBox(height: 20),
                         const Text(
@@ -385,6 +391,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                           ],
                         ),
                       ],
+                      ),
                     ),
                   ),
                 ),

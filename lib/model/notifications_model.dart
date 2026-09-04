@@ -10,6 +10,10 @@ class NotificationModel {
   final bool estLu;
   final String createdAt;
   final String? luAt;
+  // Non-null uniquement pour une notification générée par un nouveau
+  // message admin → parent (voir AdminConversationController::sendMessage).
+  // Permet de sauter directement dans la bonne discussion au tap.
+  final int? conversationId;
 
   NotificationModel({
     required this.id,
@@ -19,6 +23,7 @@ class NotificationModel {
     required this.estLu,
     required this.createdAt,
     this.luAt,
+    this.conversationId,
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
@@ -30,9 +35,14 @@ class NotificationModel {
       estLu: json['est_lu'] ?? false,
       createdAt: json['created_at']?.toString() ?? '',
       luAt: json['lu_at'],
+      conversationId: json['conversation_id'],
     );
   }
+
+  bool get estUnMessage => conversationId != null;
+
   Color getColor() {
+    if (estUnMessage) return const Color(0xFFF47C3C);
     switch (type) {
       case 'warning':
         return Colors.orange;
@@ -46,6 +56,7 @@ class NotificationModel {
   }
 
   IconData getIcon() {
+    if (estUnMessage) return Icons.chat_bubble;
     switch (type) {
       case 'warning':
         return Icons.warning;

@@ -3,6 +3,7 @@
 class PaiementModel {
   final int id;
   final String reference;
+  final int? inscriptionId;
   final int numeroTranche;
   final String libelle;
   final double montant;
@@ -16,6 +17,7 @@ class PaiementModel {
   PaiementModel({
     required this.id,
     required this.reference,
+    this.inscriptionId,
     required this.numeroTranche,
     required this.libelle,
     required this.montant,
@@ -42,6 +44,7 @@ class PaiementModel {
     return PaiementModel(
       id: json['id'] ?? 0,
       reference: json['reference']?.toString() ?? '',
+      inscriptionId: json['inscription_id'],
       numeroTranche: json['numero_tranche'] ?? 0,
       libelle: json['libelle']?.toString() ?? '',
       montant: montantValue,

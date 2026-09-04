@@ -7,14 +7,14 @@ import 'package:pdf/widgets.dart' as pw;
 import '../services/admin_bulletin_service.dart';
 
 class BulletinDetailScreen extends StatefulWidget {
-  final int eleveId;
+  final int inscriptionId; // ✅ Nouveau paramètre
   final String eleveNom;
   final String classe;
   final String trimestre;
 
   const BulletinDetailScreen({
     Key? key,
-    required this.eleveId,
+    required this.inscriptionId,
     required this.eleveNom,
     required this.classe,
     required this.trimestre,
@@ -40,6 +40,7 @@ class _BulletinDetailScreenState extends State<BulletinDetailScreen> {
     _checkAndGenerateBulletin();
   }
 
+  // ✅ Utilisation de inscriptionId
   Future<void> _checkAndGenerateBulletin() async {
     setState(() {
       _isLoading = true;
@@ -48,9 +49,10 @@ class _BulletinDetailScreenState extends State<BulletinDetailScreen> {
     });
 
     try {
+      // ✅ Appel avec inscriptionId
       final checkResult = await _service.checkNotesDisponibles(
-        widget.eleveId, 
-        widget.trimestre
+        widget.inscriptionId,
+        widget.trimestre,
       );
       
       if (!checkResult['toutes_disponibles']) {
@@ -79,9 +81,10 @@ class _BulletinDetailScreenState extends State<BulletinDetailScreen> {
         _generationMessage = '✅ Toutes les notes sont disponibles !\nGénération du bulletin en cours...';
       });
       
+      // ✅ Génération avec inscriptionId
       final result = await _service.generateBulletin(
-        widget.eleveId, 
-        widget.trimestre
+        widget.inscriptionId,
+        widget.trimestre,
       );
       
       if (result['success']) {

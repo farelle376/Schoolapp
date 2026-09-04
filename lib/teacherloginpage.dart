@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'teacherdashbordpage.dart';
 import 'changepasswordpage.dart';
-import 'professeur_forgot_password_page.dart'; // Ajoute l'import
+import 'professeur_forgot_password_page.dart';
+import 'utils/constants.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TeacherLoginPage extends StatefulWidget {
   @override
@@ -55,6 +57,15 @@ class _TeacherLoginPageState extends State<TeacherLoginPage> {
       print('Type: ${data['first_login'].runtimeType}');
 
         if (data['success'] == true) {
+          final token = data['token'];
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(Constants.professeurToken, token);
+          print('✅ Token sauvegardé: $token');
+          
+          // ✅ Vérifier que le token est bien sauvegardé
+          final savedToken = prefs.getString(Constants.professeurToken);
+          print('✅ Vérification token sauvegardé: ${savedToken != null ? "OK" : "NON"}');
           _showSnackBar('Connexion réussie !', Colors.green);
 
       final isFirstLogin = data['first_login'] == true || data['first_login'] == 1;
@@ -122,58 +133,64 @@ class _TeacherLoginPageState extends State<TeacherLoginPage> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Expanded(
-                        child: RichText(
-                          textAlign: TextAlign.center,
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: 'School',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Expanded(
+                      child: RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'School',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
                               ),
-                              TextSpan(
-                                text: 'App',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFF47C3C),
-                                ),
+                            ),
+                            TextSpan(
+                              text: 'App',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFF47C3C),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(width: 50),
-                    ],
-                  ),
+                    ),
+                    SizedBox(width: 50),
+                  ],
                 ),
-                SizedBox(height: 20),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.2),
-                  ),
-                  child: Icon(Icons.person, size: 40, color: Colors.white),
+              ),
+              SizedBox(height: 20),
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.2),
                 ),
-                SizedBox(height: 20),
-                Container(
+                child: Icon(Icons.person, size: 40, color: Colors.white),
+              ),
+              SizedBox(height: 20),
+              // ✅ Expanded + SingleChildScrollView interne (même structure
+              // que parentloginpage.dart / adminloginpage.dart) : la carte
+              // blanche occupe tout l'espace restant jusqu'en bas de l'écran
+              // au lieu de s'arrêter à la hauteur de son contenu, ce qui
+              // laissait apparaître un espace bleu (le dégradé de fond) sous
+              // le formulaire.
+              Expanded(
+                child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -182,7 +199,8 @@ class _TeacherLoginPageState extends State<TeacherLoginPage> {
                       topRight: Radius.circular(25),
                     ),
                   ),
-                  child: Column(
+                  child: SingleChildScrollView(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Center(
@@ -320,8 +338,9 @@ class _TeacherLoginPageState extends State<TeacherLoginPage> {
                     ],
                   ),
                 ),
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

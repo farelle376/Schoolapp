@@ -7,6 +7,14 @@ import 'conversation_detail_admin_screen.dart';
 import '../model/conversation_admin_model.dart';
 
 class GestNotificationPage extends StatefulWidget {
+  // Appelé après qu'une conversation ait été consultée (donc des messages
+  // potentiellement marqués lus côté serveur), pour que la pastille de la
+  // barre latérale (gérée par AdminDashboardPage, un widget parent) se
+  // remette à jour immédiatement au lieu d'attendre le prochain sondage.
+  final VoidCallback? onConversationRead;
+
+  const GestNotificationPage({Key? key, this.onConversationRead}) : super(key: key);
+
   @override
   _GestNotificationPageState createState() => _GestNotificationPageState();
 }
@@ -57,11 +65,20 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   Future<void> _deleteNotification(NotificationAdminModel notification) async {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmation'),
-        content: Text('Supprimer la notification "${notification.titre}" ?'),
+        backgroundColor: isDarkMode ? Colors.grey.shade900 : Colors.white,
+        title: Text(
+          'Confirmation',
+          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+        ),
+        content: Text(
+          'Supprimer la notification "${notification.titre}" ?',
+          style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
@@ -83,6 +100,7 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   void _showAddNotificationDialog() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final formKey = GlobalKey<FormState>();
     int? selectedParentId;
     int? selectedEleveId;
@@ -97,7 +115,6 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
-          // Charger les parents
           if (parents.isEmpty && isLoadingParents) {
             _service.getParents().then((p) {
               setStateDialog(() {
@@ -113,7 +130,11 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
           }
 
           return AlertDialog(
-            title: const Text('Ajouter une notification'),
+            backgroundColor: isDarkMode ? Colors.grey.shade900 : Colors.white,
+            title: Text(
+              'Ajouter une notification',
+              style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+            ),
             content: SingleChildScrollView(
               child: Form(
                 key: formKey,
@@ -121,7 +142,12 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<int>(
-                      decoration: const InputDecoration(labelText: 'Parent destinataire'),
+                      decoration: InputDecoration(
+                        labelText: 'Parent destinataire',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700),
+                      ),
+                      dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                       items: parents.map((p) {
                         String nom = p['prenom']?.toString() ?? '';
                         String prenom = p['nom']?.toString() ?? '';
@@ -135,7 +161,12 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<int>(
-                      decoration: const InputDecoration(labelText: 'Élève concerné (optionnel)'),
+                      decoration: InputDecoration(
+                        labelText: 'Élève concerné (optionnel)',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700),
+                      ),
+                      dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                       items: [
                         const DropdownMenuItem<int>(value: null, child: Text('-- Général --')),
                         ...eleves.map((e) => DropdownMenuItem<int>(
@@ -147,21 +178,67 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
-                      decoration: const InputDecoration(labelText: 'Titre'),
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                      decoration: InputDecoration(
+                        labelText: 'Titre',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFF47C3C)),
+                        ),
+                      ),
                       onChanged: (value) => titre = value,
                       validator: (v) => v!.isEmpty ? 'Champ requis' : null,
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
-                      decoration: const InputDecoration(labelText: 'Message'),
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                       maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Message',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFF47C3C)),
+                        ),
+                      ),
                       onChanged: (value) => message = value,
                       validator: (v) => v!.isEmpty ? 'Champ requis' : null,
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(labelText: 'Type'),
                       value: type,
+                      dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                      decoration: InputDecoration(
+                        labelText: 'Type',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFF47C3C)),
+                        ),
+                      ),
                       items: const [
                         DropdownMenuItem(value: 'info', child: Text('Information')),
                         DropdownMenuItem(value: 'success', child: Text('Succès')),
@@ -175,7 +252,10 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
               ElevatedButton(
                 onPressed: () async {
                   if (formKey.currentState!.validate()) {
@@ -203,6 +283,7 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                     }
                   }
                 },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF47C3C)),
                 child: const Text('Envoyer'),
               ),
             ],
@@ -225,7 +306,10 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Notifications et Messages', style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF0D2B4E),
@@ -266,6 +350,8 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   Widget _buildTabs() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       margin: const EdgeInsets.all(16),
       child: Row(
@@ -276,14 +362,14 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: _showNotifications ? const Color(0xFFF47C3C) : Colors.grey[200],
+                  color: _showNotifications ? const Color(0xFFF47C3C) : (isDarkMode ? Colors.grey.shade800 : Colors.grey[200]),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
                   child: Text(
                     'Notifications',
                     style: TextStyle(
-                      color: _showNotifications ? Colors.white : Colors.grey[700],
+                      color: _showNotifications ? Colors.white : (isDarkMode ? Colors.grey.shade400 : Colors.grey[700]),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -298,14 +384,14 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: !_showNotifications ? const Color(0xFFF47C3C) : Colors.grey[200],
+                  color: !_showNotifications ? const Color(0xFFF47C3C) : (isDarkMode ? Colors.grey.shade800 : Colors.grey[200]),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
                   child: Text(
                     'Messages (${_conversations.length})',
                     style: TextStyle(
-                      color: !_showNotifications ? Colors.white : Colors.grey[700],
+                      color: !_showNotifications ? Colors.white : (isDarkMode ? Colors.grey.shade400 : Colors.grey[700]),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -319,8 +405,15 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   Widget _buildNotificationsList() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     if (_notifications.isEmpty) {
-      return const Center(child: Text('Aucune notification'));
+      return Center(
+        child: Text(
+          'Aucune notification',
+          style: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600),
+        ),
+      );
     }
 
     return ListView.builder(
@@ -329,20 +422,38 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
       itemBuilder: (context, index) {
         final notif = _notifications[index];
         return Card(
+          color: isDarkMode ? Colors.grey.shade800 : Colors.white,
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: _getTypeColor(notif.type).withOpacity(0.1),
               child: Icon(_getTypeIcon(notif.type), color: _getTypeColor(notif.type)),
             ),
-            title: Text(notif.titre, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              notif.titre,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDarkMode ? Colors.white : Colors.black,
+              ),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(notif.message, maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(
+                  notif.message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87),
+                ),
                 const SizedBox(height: 4),
-                Text(notif.destinataire, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                Text(notif.formattedDate, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                Text(
+                  notif.destinataire,
+                  style: TextStyle(fontSize: 11, color: isDarkMode ? Colors.grey.shade500 : Colors.grey[500]),
+                ),
+                Text(
+                  notif.formattedDate,
+                  style: TextStyle(fontSize: 10, color: isDarkMode ? Colors.grey.shade600 : Colors.grey[400]),
+                ),
               ],
             ),
             trailing: IconButton(
@@ -356,8 +467,15 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   Widget _buildConversationsList() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     if (_conversations.isEmpty) {
-      return const Center(child: Text('Aucun message'));
+      return Center(
+        child: Text(
+          'Aucun message',
+          style: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600),
+        ),
+      );
     }
 
     return ListView.builder(
@@ -366,19 +484,54 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
       itemBuilder: (context, index) {
         final conv = _conversations[index];
         return Card(
+          color: isDarkMode ? Colors.grey.shade800 : Colors.white,
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: conv.messagesNonLus > 0 ? Colors.red.withOpacity(0.1) : Colors.grey[200],
-              child: Icon(Icons.message, color: conv.messagesNonLus > 0 ? Colors.red : Colors.grey),
+              backgroundColor: conv.messagesNonLus > 0 
+                  ? (isDarkMode ? Colors.red.withOpacity(0.2) : Colors.red.withOpacity(0.1))
+                  : (isDarkMode ? Colors.grey.shade700 : Colors.grey[200]),
+              child: Icon(
+                Icons.message,
+                color: conv.messagesNonLus > 0 ? Colors.red : (isDarkMode ? Colors.grey.shade500 : Colors.grey),
+              ),
             ),
-            title: Text(conv.sujet, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              conv.sujet,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDarkMode ? Colors.white : Colors.black,
+              ),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(conv.parentFullName, style: const TextStyle(fontSize: 12)),
+                Text(
+                  conv.parentFullName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
+                  ),
+                ),
+                if (conv.eleveNom != null && conv.eleveNom!.isNotEmpty)
+                  Text(
+                    conv.classe != null && conv.classe!.isNotEmpty
+                        ? '👤 ${conv.eleveNom} — ${conv.classe}'
+                        : '👤 ${conv.eleveNom}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: isDarkMode ? Colors.blue.shade200 : Colors.blue.shade700,
+                    ),
+                  ),
                 if (conv.dernierMessage != null)
-                  Text(conv.dernierMessage!, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                  Text(
+                    conv.dernierMessage!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDarkMode ? Colors.grey.shade500 : Colors.grey[600],
+                    ),
+                  ),
               ],
             ),
             trailing: Column(
@@ -396,7 +549,10 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                       style: const TextStyle(color: Colors.white, fontSize: 10),
                     ),
                   ),
-                Text(conv.formattedDate, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                Text(
+                  conv.formattedDate,
+                  style: TextStyle(fontSize: 10, color: isDarkMode ? Colors.grey.shade600 : Colors.grey[400]),
+                ),
               ],
             ),
             onTap: () {
@@ -407,9 +563,14 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
                     conversationId: conv.id,
                     parentName: conv.parentFullName,
                     sujet: conv.sujet,
+                    eleveNom: conv.eleveNom,
+                    classe: conv.classe,
                   ),
                 ),
-              ).then((_) => _loadData());
+              ).then((_) {
+                _loadData();
+                widget.onConversationRead?.call();
+              });
             },
           ),
         );
@@ -436,13 +597,22 @@ class _GestNotificationPageState extends State<GestNotificationPage> {
   }
 
   Widget _buildErrorWidget() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+          Icon(
+            Icons.error_outline,
+            size: 60,
+            color: isDarkMode ? Colors.grey.shade600 : Colors.grey[400],
+          ),
           const SizedBox(height: 16),
-          Text(_error!, style: TextStyle(color: Colors.grey[600])),
+          Text(
+            _error!,
+            style: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600]),
+          ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _loadData,

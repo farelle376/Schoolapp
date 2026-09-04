@@ -1,28 +1,26 @@
 // 2. PAGE D'ACCUEIL AVEC SÉLECTION DE PROFIL
+//
+// ⚠️ L'option "ADMINISTRATION" a été retirée de ce sélecteur : côté mobile,
+// seuls les parents et professeurs utilisent l'app. L'accès admin reste
+// disponible via la version web (voir main.dart : kIsWeb ? AdminLoginPage()
+// : SimulationPage()).
 import 'package:flutter/material.dart';
-import 'adminloginpage.dart';
 import 'parentloginpage.dart';
 import 'teacherloginpage.dart';
 
 class AccueilPage extends StatelessWidget {
   final List<Map<String, dynamic>> profiles = [
     {
-      'title': 'PARENTS', 
-      'icon': Icons.family_restroom, 
+      'title': 'PARENTS',
+      'icon': Icons.family_restroom,
       'color': Color(0xFFF47C3C), // Bleu foncé
       'description': 'Suivez la scolarité de vos enfants'
     },
     {
-      'title': 'PROFESSEURS', 
-      'icon': Icons.person, 
+      'title': 'PROFESSEURS',
+      'icon': Icons.person,
       'color': Color(0xFFF47C3C), // Bleu moyen
       'description': 'Gérez vos classes et notes'
-    },
-    {
-      'title': 'ADMINISTRATION', 
-      'icon': Icons.business, 
-      'color': Color(0xFFF47C3C), // Orange
-      'description': 'Administrez l\'établissement'
     },
   ];
 
@@ -215,18 +213,13 @@ class AccueilPage extends StatelessWidget {
                               onTap: () {
                                 if (profiles[index]['title'] == 'PARENTS') {
                                   Navigator.push(
-                                    context, 
+                                    context,
                                     MaterialPageRoute(builder: (context) => ParentLoginPage())
                                   );
                                 } else if (profiles[index]['title'] == 'PROFESSEURS') {
                                   Navigator.push(
-                                    context, 
+                                    context,
                                     MaterialPageRoute(builder: (context) => TeacherLoginPage())
-                                  );
-                                } else {
-                                  Navigator.push(
-                                    context, 
-                                    MaterialPageRoute(builder: (context) => AdminLoginPage())
                                   );
                                 }
                               },
@@ -312,29 +305,6 @@ class AccueilPage extends StatelessWidget {
                                         ],
                                       ),
                                     ),
-                                    
-                                    // Petit badge si c'est l'admin (optionnel)
-                                    if (index == 2)
-                                      Positioned(
-                                        top: 0,
-                                        right: 10,
-                                        child: Container(
-                                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Color(0xFFF47C3C),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            'ADMIN',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 1,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
                                   ],
                                 ),
                               ),

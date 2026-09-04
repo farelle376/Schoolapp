@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../model/notifications_model.dart';
+import 'conversation_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   @override
@@ -64,6 +65,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Future<void> _onNotificationTap(NotificationModel notif) async {
+    if (!notif.estLu) {
+      await _markAsRead(notif.id);
+    }
+    // Notification liée à un message reçu : on va directement dans la
+    // discussion concernée au lieu de rester sur la liste.
+    if (notif.conversationId != null && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ConversationDetailScreen(
+            conversationId: notif.conversationId!,
+            sujet: notif.titre.replaceFirst('Nouveau message : ', ''),
+            conversationType: 'general',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,11 +131,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         margin: EdgeInsets.only(bottom: 12),
                         color: notif.estLu ? Colors.white : Color(0xFFF47C3C).withOpacity(0.05),
                         child: InkWell(
-                          onTap: () {
-                            if (!notif.estLu) {
-                              _markAsRead(notif.id);
-                            }
-                          },
+                          onTap: () => _onNotificationTap(notif),
                           borderRadius: BorderRadius.circular(12),
                           child: Padding(
                             padding: EdgeInsets.all(15),

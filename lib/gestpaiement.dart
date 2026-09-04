@@ -6,7 +6,9 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../services/admin_paiement_service.dart';
+import '../services/annee_scolaire_service.dart';
 import '../model/paiement_admin_model.dart';
+import '../model/annee_scolaire_model.dart';
 
 class GestPaiementPage extends StatefulWidget {
   @override
@@ -15,21 +17,24 @@ class GestPaiementPage extends StatefulWidget {
 
 class _GestPaiementPageState extends State<GestPaiementPage> {
   final AdminPaiementService _paiementService = AdminPaiementService();
+  final AnneeScolaireService _anneeService = AnneeScolaireService();
   final TextEditingController _searchController = TextEditingController();
-  
+
   List<PaiementAdminModel> _paiements = [];
   List<PaiementAdminModel> _filteredPaiements = [];
   List<ClasseInfo> _classes = [];
-  
+  List<AnneeScolaire> _anneesScolaires = [];
+  int? _selectedAnneeId;
+
   bool _isLoading = true;
   bool _isLoadingList = false;
   bool _isDownloading = false;
   String? _error;
-  
+
   int? _selectedClasseId;
-  int _selectedTranche = 1;
+  int? _selectedTranche;
   String _searchQuery = '';
-  
+
   Timer? _debounceTimer;
 
   final List<int> _tranches = [1, 2, 3, 4];
@@ -43,7 +48,7 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   @override
   void initState() {
     super.initState();
-    _loadClasses();
+    _loadData();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -74,32 +79,40 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
       setState(() {
         _filteredPaiements = _paiements.where((p) {
           return p.eleveNom.toLowerCase().contains(_searchQuery) ||
-                 p.elevePrenom.toLowerCase().contains(_searchQuery) ||
-                 p.reference.toLowerCase().contains(_searchQuery);
+              p.elevePrenom.toLowerCase().contains(_searchQuery) ||
+              p.reference.toLowerCase().contains(_searchQuery);
         }).toList();
       });
     }
   }
 
-  Future<void> _loadClasses() async {
+  Future<void> _loadData() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
+      // Charger les années
+      final annees = await _anneeService.getAnneesScolaires();
+      _anneesScolaires = annees;
+      if (_selectedAnneeId == null && annees.isNotEmpty) {
+        final anneeEnCours = await _anneeService.getAnneeEnCours();
+        if (anneeEnCours != null && annees.any((a) => a.id == anneeEnCours.id)) {
+          _selectedAnneeId = anneeEnCours.id;
+        } else {
+          _selectedAnneeId = annees.first.id;
+        }
+      }
+
+      // Charger les classes
       final classes = await _paiementService.getClasses();
-      
-      if (!mounted) return;
-      
-      setState(() {
-        _classes = classes;
-      });
-      
+      _classes = classes;
+
+      // Charger les paiements (avec année par défaut)
       await _loadPaiements();
-      
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -114,36 +127,51 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   }
 
   Future<void> _loadPaiements() async {
+    if (_selectedAnneeId == null) {
+      // Si aucune année n'est sélectionnée, ne pas charger
+      setState(() {
+        _paiements = [];
+        _filteredPaiements = [];
+      });
+      return;
+    }
+
     setState(() {
       _isLoadingList = true;
       _error = null;
     });
 
     try {
-      List<PaiementAdminModel> paiements = [];
-      
-      if (_selectedClasseId == null) {
-        for (var classe in _classes) {
-          final classePaiements = await _paiementService.getPaiementsByClasseAndTranche(
-            classe.id, 
-            _selectedTranche,
-          );
-          paiements.addAll(classePaiements);
+      // "Toutes les classes" (null) -> parcourir _classes ; sinon une seule.
+      final classesACharger = _selectedClasseId == null
+          ? _classes
+          : _classes.where((c) => c.id == _selectedClasseId).toList();
+
+      // "Toutes les tranches" (null) -> parcourir _tranches ; sinon une seule.
+      final tranchesACharger = _selectedTranche == null ? _tranches : [_selectedTranche!];
+
+      // ⚠️ Avant : un appel HTTP séquentiel par combinaison classe×tranche
+      // (ex. 10 classes × 4 tranches = 40 aller-retours l'un après l'autre).
+      // On les lance maintenant tous en parallèle avec Future.wait.
+      final requetes = <Future<List<PaiementAdminModel>>>[];
+      for (var classe in classesACharger) {
+        for (var tranche in tranchesACharger) {
+          requetes.add(_paiementService.getPaiementsByClasseAndTranche(
+            classe.id,
+            tranche,
+            anneeScolaireId: _selectedAnneeId,
+          ));
         }
-      } else {
-        paiements = await _paiementService.getPaiementsByClasseAndTranche(
-          _selectedClasseId!, 
-          _selectedTranche,
-        );
       }
-      
+      final resultats = await Future.wait(requetes);
+      final List<PaiementAdminModel> paiements = resultats.expand((r) => r).toList();
+
       if (!mounted) return;
-      
+
       setState(() {
         _paiements = paiements;
         _applyLocalFilter();
       });
-      
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -166,7 +194,7 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
     _loadPaiements();
   }
 
-  void _onTrancheChanged(int value) {
+  void _onTrancheChanged(int? value) {
     setState(() {
       _selectedTranche = value;
       _searchController.clear();
@@ -175,27 +203,34 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
     _loadPaiements();
   }
 
-  // Téléchargement du reçu - comme dans gestscolarite
+  void _onAnneeChanged(int? anneeId) async {
+    setState(() {
+      _selectedAnneeId = anneeId;
+      _selectedClasseId = null; // Réinitialiser la sélection de classe
+      _searchController.clear();
+      _searchQuery = '';
+    });
+    await _loadPaiements();
+  }
+
   Future<void> _telechargerRecu(PaiementAdminModel paiement) async {
     setState(() {
       _isDownloading = true;
     });
 
     try {
-      // Formater la date
       String dateFormatee = paiement.formattedDate;
       if (dateFormatee == 'Date non spécifiée' || dateFormatee.isEmpty) {
         dateFormatee = DateTime.now().toString().split(' ')[0];
       }
-      
+
       final pdf = pw.Document();
-      
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: pw.EdgeInsets.all(20),
           build: (pw.Context context) => [
-            // En-tête
             pw.Container(
               alignment: pw.Alignment.center,
               child: pw.Column(
@@ -214,8 +249,7 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
               ),
             ),
             pw.SizedBox(height: 20),
-            
-            // Informations
+
             pw.Container(
               padding: pw.EdgeInsets.all(15),
               decoration: pw.BoxDecoration(
@@ -230,12 +264,14 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
                   _buildInfoRow('Classe', paiement.classe),
                   _buildInfoRow('Libellé', paiement.libelle),
                   _buildInfoRow('Mode de paiement', _getModePaiementLabel(paiement.modePaiement ?? 'kkiapay')),
+                  // Afficher l'année si présente
+                  if (paiement.anneeScolaireLibelle != null)
+                    _buildInfoRow('Année', paiement.anneeScolaireLibelle!),
                 ],
               ),
             ),
             pw.SizedBox(height: 20),
-            
-            // Montant
+
             pw.Container(
               padding: pw.EdgeInsets.all(15),
               decoration: pw.BoxDecoration(
@@ -257,8 +293,7 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
               ),
             ),
             pw.SizedBox(height: 30),
-            
-            // Signatures
+
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
@@ -279,8 +314,7 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
               ],
             ),
             pw.SizedBox(height: 20),
-            
-            // Pied de page
+
             pw.Text(
               'Document généré automatiquement par SchoolApp',
               style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
@@ -293,10 +327,10 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
           ],
         ),
       );
-      
+
       final bytes = await pdf.save();
       await Printing.sharePdf(bytes: bytes, filename: 'recu_${paiement.reference}.pdf');
-      
+
       _showSnackBar('✅ Reçu téléchargé avec succès');
     } catch (e) {
       print('❌ Erreur: $e');
@@ -337,18 +371,27 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
 
   String _getModePaiementLabel(String mode) {
     switch (mode) {
-      case 'orange_money': return 'Orange Money';
-      case 'wave': return 'Wave';
-      case 'free_money': return 'Free Money';
-      case 'fedapay': return 'FedaPay';
-      case 'kkiapay': return 'KKiaPay';
-      default: return mode;
+      case 'orange_money':
+        return 'Orange Money';
+      case 'wave':
+        return 'Wave';
+      case 'free_money':
+        return 'Free Money';
+      case 'fedapay':
+        return 'FedaPay';
+      case 'kkiapay':
+        return 'KKiaPay';
+      default:
+        return mode;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Gestion des paiements', style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF0D2B4E),
@@ -374,8 +417,9 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
               ? _buildErrorWidget()
               : Column(
                   children: [
-                    _buildClassSelector(),
-                    _buildTrancheSelector(),
+                    // Sélecteur d'année
+                    _buildAnneeSelector(),
+                    _buildClassAndTrancheRow(),
                     _buildSearchBar(),
                     _buildStatsWidget(),
                     Expanded(
@@ -397,92 +441,170 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
     );
   }
 
-  Widget _buildClassSelector() {
-    return Container(
-      height: 45,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: const Text('TOUS'),
-              selected: _selectedClasseId == null,
-              onSelected: (_) => _onClassChanged(null),
-              backgroundColor: Colors.grey[200],
-              selectedColor: Colors.blue.withOpacity(0.2),
-              labelStyle: TextStyle(
-                color: _selectedClasseId == null ? Colors.blue : Colors.grey[700],
-                fontWeight: _selectedClasseId == null ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-          ..._classes.map((classe) => Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(classe.nom),
-              selected: _selectedClasseId == classe.id,
-              onSelected: (_) => _onClassChanged(classe.id),
-              backgroundColor: Colors.grey[200],
-              selectedColor: const Color(0xFFF47C3C).withOpacity(0.2),
-              labelStyle: TextStyle(
-                color: _selectedClasseId == classe.id ? const Color(0xFFF47C3C) : Colors.grey[700],
-                fontWeight: _selectedClasseId == classe.id ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          )),
-        ],
-      ),
-    );
-  }
+  // ==================== WIDGETS DE FILTRES ====================
 
-  Widget _buildTrancheSelector() {
+  Widget _buildAnneeSelector() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    if (_anneesScolaires.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
+        color: isDarkMode ? Colors.grey.shade800 : Colors.white,
+        border: Border.all(color: isDarkMode ? Colors.grey.shade700 : Colors.grey[300]!),
         borderRadius: BorderRadius.circular(8),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<int>(
-          value: _selectedTranche,
+          value: _selectedAnneeId,
           isExpanded: true,
-          items: _tranches.map((tranche) {
-            return DropdownMenuItem(
-              value: tranche,
-              child: Text(_trancheLabels[tranche]!),
-            );
-          }).toList(),
+          dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+          style: TextStyle(
+            color: isDarkMode ? Colors.white : Colors.black,
+          ),
+          items: [
+            const DropdownMenuItem(
+              value: null,
+              child: Text('Toutes les années'),
+            ),
+            ..._anneesScolaires.map((annee) {
+              return DropdownMenuItem(
+                value: annee.id,
+                child: Text(annee.libelle ?? 'Année ${annee.id}'),
+              );
+            }),
+          ],
           onChanged: (value) {
-            if (value != null) {
-              _onTrancheChanged(value);
-            }
+            _onAnneeChanged(value);
           },
         ),
       ),
     );
   }
 
+  Widget _buildClassAndTrancheRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          Expanded(child: _buildClassSelector()),
+          const SizedBox(width: 8),
+          Expanded(child: _buildTrancheSelector()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClassSelector() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey.shade800 : Colors.white,
+        border: Border.all(color: isDarkMode ? Colors.grey.shade700 : Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int?>(
+          value: _selectedClasseId,
+          isExpanded: true,
+          isDense: true,
+          dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+          style: TextStyle(fontSize: 13, color: isDarkMode ? Colors.white : Colors.black),
+          hint: const Text('Toutes les classes', style: TextStyle(fontSize: 13)),
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Toutes les classes', overflow: TextOverflow.ellipsis),
+            ),
+            ..._classes.map((classe) {
+              return DropdownMenuItem<int?>(
+                value: classe.id,
+                child: Text(classe.nom, overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+          ],
+          onChanged: _onClassChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrancheSelector() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey.shade800 : Colors.white,
+        border: Border.all(color: isDarkMode ? Colors.grey.shade700 : Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int?>(
+          value: _selectedTranche,
+          isExpanded: true,
+          isDense: true,
+          dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+          style: TextStyle(fontSize: 13, color: isDarkMode ? Colors.white : Colors.black),
+          hint: const Text('Toutes les tranches', style: TextStyle(fontSize: 13)),
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Toutes les tranches', overflow: TextOverflow.ellipsis),
+            ),
+            ..._tranches.map((tranche) {
+              return DropdownMenuItem<int?>(
+                value: tranche,
+                child: Text(_trancheLabels[tranche]!, overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+          ],
+          onChanged: _onTrancheChanged,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDarkMode ? Colors.grey.shade800 : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 5, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDarkMode ? 0.3 : 0.05),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            )
+          ],
         ),
         child: TextField(
           controller: _searchController,
+          style: TextStyle(
+            color: isDarkMode ? Colors.white : Colors.black,
+          ),
           decoration: InputDecoration(
             hintText: 'Rechercher par élève ou référence...',
-            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+            hintStyle: TextStyle(
+              color: isDarkMode ? Colors.grey.shade500 : Colors.grey[400],
+              fontSize: 13,
+            ),
             prefixIcon: const Icon(Icons.search, color: Color(0xFFF47C3C), size: 20),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.clear, color: Colors.grey, size: 18),
+                    icon: Icon(Icons.clear, color: isDarkMode ? Colors.grey.shade400 : Colors.grey, size: 18),
                     onPressed: () {
                       _searchController.clear();
                       setState(() {
@@ -492,9 +614,20 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
                     },
                   )
                 : null,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFF47C3C), width: 1),
+            ),
             filled: true,
-            fillColor: Colors.grey[50],
+            fillColor: isDarkMode ? Colors.grey.shade800 : Colors.grey[50],
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           ),
         ),
@@ -505,19 +638,21 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   Widget _buildStatsWidget() {
     final total = _filteredPaiements.length;
     final totalMontant = _filteredPaiements.fold<double>(0, (sum, p) => sum + p.montant);
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF0D2B4E), Color(0xFF1F4E79)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: const LinearGradient(
+            colors: [Color(0xFF0D2B4E), Color(0xFF1F4E79)], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildStatItem(Icons.payment, 'Total', total.toString(), Colors.white),
-          _buildStatItem(Icons.attach_money, 'Montant', '${(totalMontant / 1000).toStringAsFixed(0)}K FCFA', const Color(0xFFF47C3C)),
+          _buildStatItem(Icons.attach_money, 'Montant', '${(totalMontant / 1000).toStringAsFixed(0)}K FCFA',
+              const Color(0xFFF47C3C)),
         ],
       ),
     );
@@ -540,10 +675,13 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   }
 
   Widget _buildPaiementCard(PaiementAdminModel paiement) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 1,
+      color: isDarkMode ? Colors.grey.shade800 : Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -565,16 +703,47 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${paiement.elevePrenom} ${paiement.eleveNom}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                      Text(paiement.classe, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                      Text(
+                        '${paiement.elevePrenom} ${paiement.eleveNom}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      Text(
+                        paiement.classe,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(15)),
-                  child: const Text('Validé', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green)),
-                ),
+                Builder(builder: (context) {
+                  // ⚠️ Le serveur exclut déjà les paiements 'refuse' de
+                  // cette liste (voir AdminPaiementController), donc ce cas
+                  // ne devrait normalement jamais s'afficher ici — mais le
+                  // badge était avant codé en dur sur "Validé" quel que
+                  // soit le statut réel, ce qui aurait été trompeur pour un
+                  // paiement encore 'en_attente'. On l'aligne sur le vrai
+                  // statut.
+                  final estValide = paiement.statut == 'valide';
+                  final label = estValide ? 'Validé' : 'En attente';
+                  final color = estValide ? Colors.green : Colors.orange;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+                    ),
+                  );
+                }),
               ],
             ),
             const SizedBox(height: 8),
@@ -585,16 +754,32 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Tranche ${paiement.numeroTranche}', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                      Text(paiement.libelle, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                      Text(
+                        'Tranche ${paiement.numeroTranche}',
+                        style: TextStyle(fontSize: 11, color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600]),
+                      ),
+                      Text(
+                        paiement.libelle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: isDarkMode ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(paiement.montantFormatted, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFF47C3C))),
-                    Text('Ref: ${paiement.reference.substring(0, 8)}...', style: TextStyle(fontSize: 9, color: Colors.grey[500])),
+                    Text(
+                      paiement.montantFormatted,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFF47C3C)),
+                    ),
+                    Text(
+                      'Ref: ${paiement.reference.substring(0, paiement.reference.length > 8 ? 8 : paiement.reference.length)}...',
+                      style: TextStyle(fontSize: 9, color: isDarkMode ? Colors.grey.shade500 : Colors.grey[500]),
+                    ),
                   ],
                 ),
               ],
@@ -604,9 +789,12 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
                 padding: const EdgeInsets.only(top: 6),
                 child: Row(
                   children: [
-                    Icon(Icons.calendar_today, size: 10, color: Colors.grey[500]),
+                    Icon(Icons.calendar_today, size: 10, color: isDarkMode ? Colors.grey.shade500 : Colors.grey[500]),
                     const SizedBox(width: 4),
-                    Text('Payé le: ${paiement.datePaiement}', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+                    Text(
+                      'Payé le: ${paiement.datePaiement}',
+                      style: TextStyle(fontSize: 10, color: isDarkMode ? Colors.grey.shade500 : Colors.grey[500]),
+                    ),
                   ],
                 ),
               ),
@@ -615,8 +803,8 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: _isDownloading ? null : () => _telechargerRecu(paiement),
-                icon: _isDownloading 
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                icon: _isDownloading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.receipt, size: 16),
                 label: Text(_isDownloading ? 'Génération...' : 'Télécharger le reçu', style: const TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(
@@ -633,20 +821,32 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   }
 
   Widget _buildEmptyState() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.payment_outlined, size: 60, color: Colors.grey[400]),
+          Icon(
+            Icons.payment_outlined,
+            size: 60,
+            color: isDarkMode ? Colors.grey.shade600 : Colors.grey[400],
+          ),
           const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty ? 'Aucun paiement trouvé' : 'Aucun paiement enregistré',
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            style: TextStyle(
+              fontSize: 16,
+              color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             _searchQuery.isNotEmpty ? 'Essayez avec d\'autres mots-clés' : 'Sélectionnez une classe et une tranche',
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            style: TextStyle(
+              fontSize: 12,
+              color: isDarkMode ? Colors.grey.shade500 : Colors.grey[500],
+            ),
           ),
         ],
       ),
@@ -654,17 +854,34 @@ class _GestPaiementPageState extends State<GestPaiementPage> {
   }
 
   Widget _buildErrorWidget() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 50, color: Colors.grey[400]),
+          Icon(
+            Icons.error_outline,
+            size: 50,
+            color: isDarkMode ? Colors.grey.shade500 : Colors.grey[400],
+          ),
           const SizedBox(height: 16),
-          Text(_error!, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          Text(
+            _error!,
+            style: TextStyle(
+              color: isDarkMode ? Colors.grey.shade400 : Colors.grey[600],
+              fontSize: 13,
+            ),
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () { _searchController.clear(); _loadPaiements(); },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF47C3C)),
+            onPressed: () {
+              _searchController.clear();
+              _loadPaiements();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF47C3C),
+            ),
             child: const Text('Réessayer'),
           ),
         ],

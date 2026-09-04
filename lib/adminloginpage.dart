@@ -164,7 +164,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       ),
                     ],
                   ),
-                  child: Column(
+                  // ⚠️ Column à taille fixe non scrollable dans un Expanded :
+                  // quand le clavier s'ouvre (champs email/mot de passe),
+                  // l'espace vertical disponible se réduit et provoquait un
+                  // RenderFlex overflow. SingleChildScrollView laisse le
+                  // contenu défiler au lieu de déborder.
+                  child: SingleChildScrollView(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Center(
@@ -327,6 +333,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                         ),
                       ),
                     ],
+                  ),
                   ),
                 ),
               ),

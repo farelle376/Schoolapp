@@ -1,3 +1,4 @@
+
 // lib/screens/gestparent.dart
 
 import 'package:flutter/material.dart';
@@ -10,7 +11,7 @@ class GestParentPage extends StatefulWidget {
 }
 
 class _GestParentPageState extends State<GestParentPage> {
-  final ParentService _parentService = ParentService();
+  final ParentService _parentService = ParentService(mode: 'admin');
   final TextEditingController _searchController = TextEditingController();
   
   List<ParentModel> _parents = [];
@@ -78,7 +79,7 @@ class _GestParentPageState extends State<GestParentPage> {
 
     try {
       final result = await _parentService.getParents(
-        search: null, // Pas de recherche API, on filtre localement
+        search: null,
         page: _currentPage,
       );
       
@@ -275,14 +276,19 @@ class _GestParentPageState extends State<GestParentPage> {
   }
 
   Widget _buildSidePanel() {
+    // Panneau plein écran sur mobile, limité à la moitié de l'écran sur
+    // tablette/desktop (au lieu de 0.9 partout, qui prenait presque tout
+    // l'écran même sur grand écran).
+    final screenWidth = MediaQuery.of(context).size.width;
+    final panelWidth = screenWidth < 600 ? screenWidth * 0.9 : screenWidth * 0.5;
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       top: 0,
       bottom: 0,
-      right: _isPanelOpen ? 0 : -MediaQuery.of(context).size.width * 0.9,
+      right: _isPanelOpen ? 0 : -panelWidth,
       child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
+        width: panelWidth,
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [

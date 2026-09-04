@@ -4,9 +4,11 @@ class PaiementAdminModel {
   final int id;
   final String reference;
   final int eleveId;
+  final int? inscriptionId;
   final String eleveNom;
   final String elevePrenom;
   final String classe;
+  final String? anneeScolaireLibelle;
   final int numeroTranche;
   final String libelle;
   final String? description;
@@ -20,9 +22,11 @@ class PaiementAdminModel {
     required this.id,
     required this.reference,
     required this.eleveId,
+    required this.inscriptionId,
     required this.eleveNom,
     required this.elevePrenom,
     required this.classe,
+    this.anneeScolaireLibelle,
     required this.numeroTranche,
     required this.libelle,
     this.description,
@@ -49,14 +53,20 @@ class PaiementAdminModel {
       id: json['id'] ?? 0,
       reference: json['reference']?.toString() ?? '',
       eleveId: json['eleve_id'] ?? 0,
+      inscriptionId: json['inscription_id'],
       eleveNom: json['eleve_nom']?.toString() ?? '',
       elevePrenom: json['eleve_prenom']?.toString() ?? '',
       classe: json['classe']?.toString() ?? '',
+      anneeScolaireLibelle: json['annee_scolaire_libelle']?.toString(),
       numeroTranche: json['numero_tranche'] ?? 0,
       libelle: json['libelle']?.toString() ?? '',
       description: json['description'],
       montant: montantValue,
-      statut: json['statut']?.toString() ?? 'valide',
+      // ⚠️ Défaut sûr : si jamais 'statut' manquait dans la réponse API, on
+      // ne veut surtout pas supposer 'valide' par défaut (ça afficherait un
+      // paiement comme validé/reçu à tort). 'en_attente' est le défaut
+      // neutre.
+      statut: json['statut']?.toString() ?? 'en_attente',
       modePaiement: json['mode_paiement'],
       datePaiement: json['date_paiement'],
       createdAt: json['created_at']?.toString() ?? '',

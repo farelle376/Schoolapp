@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/classe_service.dart';
+import '../services/annee_scolaire_service.dart';
+import '../model/annee_scolaire_model.dart';
 
 class GestionClassesPage extends StatefulWidget {
   @override
@@ -7,8 +9,13 @@ class GestionClassesPage extends StatefulWidget {
 }
 
 class _GestionClassesPageState extends State<GestionClassesPage> {
+  final ClasseService _classeService = ClasseService();
+  final AnneeScolaireService _anneeService = AnneeScolaireService();
+
   List<Map<String, dynamic>> _classes = [];
   List<Map<String, dynamic>> _filteredClasses = [];
+  List<AnneeScolaire> _anneesScolaires = [];
+  int? _selectedAnneeId;
   bool _isLoading = true;
   String _searchQuery = '';
 
@@ -19,21 +26,52 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    
-    final response = await ClasseService.getClasses();
-    
-    if (response['success'] == true) {
-      setState(() {
-        _classes = List<Map<String, dynamic>>.from(response['data']);
-        _filteredClasses = _classes;
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
-      _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
+  setState(() => _isLoading = true);
+
+  try {
+    // Charger les années
+    final annees = await _anneeService.getAnneesScolaires();
+    setState(() {
+      _anneesScolaires = annees;
+    });
+
+    // Déterminer l'année par défaut
+    final anneeEnCours = await _anneeService.getAnneeEnCours();
+    if (anneeEnCours != null && annees.any((a) => a.id == anneeEnCours.id)) {
+      _selectedAnneeId = anneeEnCours.id;
+    } else if (annees.isNotEmpty) {
+      _selectedAnneeId = annees.first.id;
     }
+
+    // Charger les classes avec le filtre d'année
+    await _chargerClasses();
+  } catch (e) {
+    _showSnackBar('Erreur: $e', Colors.red);
+    setState(() => _isLoading = false);
   }
+}
+
+  // lib/screens/gestion_classes_page.dart
+
+Future<void> _chargerClasses() async {
+  setState(() => _isLoading = true);
+
+  try {
+    // ✅ Utiliser getClassesList()
+    final classes = await _classeService.getClassesList(
+      anneeScolaireId: _selectedAnneeId,
+    );
+
+    setState(() {
+      _classes = classes;
+      _filteredClasses = classes;
+      _isLoading = false;
+    });
+  } catch (e) {
+    setState(() => _isLoading = false);
+    _showSnackBar('Erreur: $e', Colors.red);
+  }
+}
 
   void _filterClasses() {
     setState(() {
@@ -49,12 +87,12 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
       context: context,
       builder: (context) => _AjouterModifierClasseDialog(),
     );
-    
+
     if (result != null) {
-      final response = await ClasseService.addClasse(result);
+      final response = await _classeService.addClasse(result);
       if (response['success'] == true) {
         _showSnackBar('Classe ajoutée avec succès', Colors.green);
-        _loadData();
+        await _chargerClasses();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -66,12 +104,12 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
       context: context,
       builder: (context) => _AjouterModifierClasseDialog(classe: classe),
     );
-    
+
     if (result != null) {
-      final response = await ClasseService.updateClasse(classe['id'], result);
+      final response = await _classeService.updateClasse(classe['id'], result);
       if (response['success'] == true) {
         _showSnackBar('Classe modifiée avec succès', Colors.green);
-        _loadData();
+        await _chargerClasses();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -96,12 +134,12 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
         ],
       ),
     );
-    
+
     if (confirm == true) {
-      final response = await ClasseService.deleteClasse(classe['id']);
+      final response = await _classeService.deleteClasse(classe['id']);
       if (response['success'] == true) {
         _showSnackBar('Classe supprimée avec succès', Colors.green);
-        _loadData();
+        await _chargerClasses();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -117,7 +155,7 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -133,7 +171,7 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            onPressed: _chargerClasses,
             tooltip: 'Actualiser',
           ),
         ],
@@ -142,20 +180,67 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // Sélecteur d'année
+                if (_anneesScolaires.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Année scolaire : ',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        Expanded(
+                          child: DropdownButton<int>(
+                            value: _selectedAnneeId,
+                            isExpanded: true,
+                            items: [
+                              DropdownMenuItem(
+                                value: null,
+                                child: Text('Toutes les années'),
+                              ),
+                              ..._anneesScolaires.map((annee) {
+                                return DropdownMenuItem(
+                                  value: annee.id,
+                                  child: Text(annee.libelle ?? 'Année ${annee.id}'),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) async {
+                              setState(() {
+                                _selectedAnneeId = value;
+                              });
+                              await _chargerClasses();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // STATS CARDS
-               // STATS CARDS
-              Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-              children: [
-              _buildStatCard('Total classes', _classes.length.toString(), const Color.fromARGB(255, 4, 252, 223)),
-              const SizedBox(width: 12),
-              _buildStatCard('Total élèves', _classes.fold<int>(0, (sum, c) => sum + (c['effectif'] as int? ?? 0)).toString(), const Color(0xFFF47C3C)),
-              const SizedBox(width: 12),
-              _buildStatCard('Moyenne/classe', _classes.isEmpty ? '0' : (_classes.fold<double>(0, (sum, c) => sum + (c['effectif'] as int? ?? 0)) / _classes.length).toStringAsFixed(1), Colors.green),
-              ],
-              ),
-              ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      _buildStatCard('Total classes', _classes.length.toString(), const Color.fromARGB(255, 4, 252, 223)),
+                      const SizedBox(width: 12),
+                      _buildStatCard(
+                        'Total élèves',
+                        _classes.fold<int>(0, (sum, c) => sum + (c['effectif'] as int? ?? 0)).toString(),
+                        const Color(0xFFF47C3C),
+                      ),
+                      const SizedBox(width: 12),
+                      _buildStatCard(
+                        'Moyenne/classe',
+                        _classes.isEmpty
+                            ? '0'
+                            : (_classes.fold<double>(0, (sum, c) => sum + (c['effectif'] as int? ?? 0)) / _classes.length)
+                                .toStringAsFixed(1),
+                        Colors.green,
+                      ),
+                    ],
+                  ),
+                ),
                 // BARRE DE RECHERCHE
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -172,7 +257,7 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
                         borderSide: BorderSide.none,
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
                     ),
                   ),
                 ),
@@ -185,7 +270,7 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
                             children: [
                               Icon(Icons.class_, size: 64, color: Colors.grey),
                               const SizedBox(height: 16),
-                              const Text('Aucune classe trouvée'),
+                              const Text('Aucune classe trouvée pour cette année'),
                             ],
                           ),
                         )
@@ -205,7 +290,7 @@ class _GestionClassesPageState extends State<GestionClassesPage> {
                             rows: _filteredClasses.asMap().entries.map((entry) {
                               final index = entry.key;
                               final classe = entry.value;
-                              
+
                               return DataRow(
                                 cells: [
                                   DataCell(Text('${index + 1}')),

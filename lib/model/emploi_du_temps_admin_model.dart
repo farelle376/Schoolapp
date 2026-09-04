@@ -1,6 +1,6 @@
-// lib/model/emploi_du_temps_admin_model.dart
+// lib/models/emploi_du_temps_admin_model.dart
+
 import 'package:flutter/material.dart';
-// lib/model/emploi_du_temps_admin_model.dart
 
 class EmploiDuTempsAdminModel {
   final int id;
@@ -15,6 +15,7 @@ class EmploiDuTempsAdminModel {
   final String heureFin;
   final String typeCours;
   final bool estActive;
+  final int? anneeScolaireId;
 
   EmploiDuTempsAdminModel({
     required this.id,
@@ -29,6 +30,7 @@ class EmploiDuTempsAdminModel {
     required this.heureFin,
     required this.typeCours,
     required this.estActive,
+    this.anneeScolaireId,
   });
 
   factory EmploiDuTempsAdminModel.fromJson(Map<String, dynamic> json) {
@@ -55,6 +57,7 @@ class EmploiDuTempsAdminModel {
       heureFin: heureFin.isEmpty ? '10:00' : heureFin,
       typeCours: json['type_cours']?.toString() ?? 'cours',
       estActive: json['est_active'] ?? true,
+      anneeScolaireId: json['annee_scolaire_id'],
     );
   }
 
@@ -88,4 +91,3 @@ class EmploiDuTempsAdminModel {
     }
   }
 }
- 

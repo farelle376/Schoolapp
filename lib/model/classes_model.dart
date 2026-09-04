@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class Classe {  // <--- Vérifie que le "C" est majuscule ici
+class Classe {
   final int id;
   final String name;
   final int studentCount;

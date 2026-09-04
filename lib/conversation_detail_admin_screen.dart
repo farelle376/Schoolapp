@@ -8,12 +8,16 @@ class ConversationDetailAdminScreen extends StatefulWidget {
   final int conversationId;
   final String parentName;
   final String sujet;
+  final String? eleveNom;
+  final String? classe;
 
   const ConversationDetailAdminScreen({
     Key? key,
     required this.conversationId,
     required this.parentName,
     required this.sujet,
+    this.eleveNom,
+    this.classe,
   }) : super(key: key);
 
   @override
@@ -92,6 +96,15 @@ class _ConversationDetailAdminScreenState extends State<ConversationDetailAdminS
           children: [
             Text(widget.sujet, style: const TextStyle(fontSize: 16, color: Colors.white)),
             Text(widget.parentName, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+            // Rappelle quel enfant est concerné dès que l'admin ouvre la
+            // conversation, pour les discussions liées à un élève.
+            if (widget.eleveNom != null && widget.eleveNom!.isNotEmpty)
+              Text(
+                widget.classe != null && widget.classe!.isNotEmpty
+                    ? '👤 Concernant : ${widget.eleveNom} — ${widget.classe}'
+                    : '👤 Concernant : ${widget.eleveNom}',
+                style: const TextStyle(fontSize: 11, color: Colors.white70, fontStyle: FontStyle.italic),
+              ),
           ],
         ),
         backgroundColor: const Color(0xFF0D2B4E),

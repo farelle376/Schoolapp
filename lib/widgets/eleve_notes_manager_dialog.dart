@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../utils/constants.dart';
 import '../services/dashboard_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EleveNotesManagerDialog extends StatefulWidget {
   final Map<String, dynamic> eleve;
@@ -47,31 +48,71 @@ class _EleveNotesManagerDialogState extends State<EleveNotesManagerDialog> {
   }
 
   Future<void> _loadNotes() async {
+    // ✅ Récupérer l'inscription_id
+    final inscriptionId = widget.eleve['inscription_id'];
+    if (inscriptionId == null) {
+      print('❌ Aucun inscription_id trouvé pour cet élève');
+      setState(() {
+        _isLoading = false;
+        _notes = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de charger les notes : inscription non trouvée'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      final response = await _dashboardService.getEleveNotes(widget.eleve['id']);
+      // ✅ Utiliser inscription_id au lieu de eleve_id
+      final response = await _dashboardService.getEleveNotes(inscriptionId);
       
       if (response['success'] == true && response['data'] != null) {
+        List<Map<String, dynamic>> allNotes = List<Map<String, dynamic>>.from(response['data']);
+        
+        // ✅ Filtrer par matière (si nécessaire)
+        if (widget.matiereId > 0) {
+          allNotes = allNotes.where((note) => note['matiere_id'] == widget.matiereId).toList();
+        }
+        
         setState(() {
-          _notes = List<Map<String, dynamic>>.from(response['data']);
+          _notes = allNotes;
           _isLoading = false;
         });
       } else {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Erreur chargement notes: $e');
+      print('❌ Erreur chargement notes: $e');
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _updateNote(int noteId, double newValue) async {
     try {
+      // ✅ Récupérer le token professeur
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('professeur_token');
+      
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Session expirée, veuillez vous reconnecter'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
       final url = Uri.parse('${Constants.baseUrl}/professeur/notes/$noteId');
       final response = await http.put(
         url,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
         },
         body: jsonEncode({
           'note': newValue,
@@ -85,7 +126,7 @@ class _EleveNotesManagerDialogState extends State<EleveNotesManagerDialog> {
         await _loadNotes();
         widget.onNoteUpdated();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Note modifiée avec succès'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Note modifiée avec succès'), backgroundColor: Colors.green),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -93,9 +134,9 @@ class _EleveNotesManagerDialogState extends State<EleveNotesManagerDialog> {
         );
       }
     } catch (e) {
-      print('Erreur update: $e');
+      print('❌ Erreur update: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de connexion'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Erreur de connexion'), backgroundColor: Colors.red),
       );
     }
   }
@@ -118,7 +159,6 @@ class _EleveNotesManagerDialogState extends State<EleveNotesManagerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Raccourcir le nom pour l'affichage
     String displayName = widget.eleve['full_name'] ?? '${widget.eleve['prenom']} ${widget.eleve['nom']}';
     if (displayName.length > 20) {
       displayName = displayName.substring(0, 18) + '...';
@@ -279,7 +319,8 @@ class _EleveNotesManagerDialogState extends State<EleveNotesManagerDialog> {
                                           IconButton(
                                             icon: Icon(Icons.check, color: Colors.green),
                                             onPressed: () async {
-                                              final newValue = double.tryParse(_editControllers[index]!.text);
+                                              // ✅ Accepter la virgule comme séparateur décimal (ex: "14,5")
+                                              final newValue = double.tryParse(_editControllers[index]!.text.replaceAll(',', '.'));
                                               if (newValue != null && newValue >= 0 && newValue <= 20) {
                                                 await _updateNote(note['id'], newValue);
                                                 setState(() {

@@ -16,13 +16,27 @@ import 'teacherdashbordpage.dart';
 import 'adminloginpage.dart';
 import 'admindashbordpage.dart';
 import 'utils/app_theme.dart';
+import 'package:flutter/foundation.dart';
+// ⚠️ Import conditionnel : `webview_flutter_web` (et donc dart:js_interop,
+// indisponible hors web) n'est tiré dans la compilation QUE pour la cible
+// web. Sans ça, `flutter run`/`flutter build` sur Android échouait avec
+// "'JSObject' isn't a type" — voir les commentaires dans
+// utils/web_view_initializer_stub.dart pour le détail.
+import 'utils/web_view_initializer_stub.dart'
+    if (dart.library.js_interop) 'utils/web_view_initializer_web.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
+
+  if (kIsWeb) {
+    // Initialiser WebView pour le Web
+    initializeWebViewForWeb();
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -43,7 +57,10 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: settingsProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: SimulationPage(),
+      // La version web est dédiée à l'administration (les parents/profs
+      // utilisent l'app Android) : on saute directement l'écran de choix
+      // mobile (SimulationPage) pour atterrir sur la connexion admin.
+      home: kIsWeb ? AdminLoginPage() : SimulationPage(),
       routes: {
         '/accueil': (context) => AccueilPage(),
         '/professeur/login': (context) => TeacherLoginPage(),
@@ -137,3 +154,4 @@ Future<Map<String, dynamic>?> checkLoginStatus() async {
   }
   return null;
 }
+

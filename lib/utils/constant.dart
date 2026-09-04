@@ -1,16 +1,14 @@
 // lib/utils/constants.dart
 
-import 'dart:io';
-import 'package:flutter/foundation.dart';
+// ✅ 'dart:io' a été retiré : même utilisé uniquement derrière un test
+// `!kIsWeb`/`Platform.isAndroid`, l'import est résolu à la compilation et
+// fait échouer TOUT build web (flutter run/build -d chrome), quel que soit
+// le chemin de code réellement exécuté à l'exécution.
 
 class Constants {
   static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8000/api';
-    }
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api';
-    }
+    // Les 3 branches renvoyaient de toute façon la même URL : la logique
+    // Platform.isAndroid (tunnel adb reverse) était du code mort.
     return 'http://localhost:8000/api';
   }
 
@@ -39,7 +37,7 @@ class Constants {
 
 
   // Shared Preferences Keys
-  static const String authTokenKey = 'auth_token';      // ← AJOUTEZ CETTE LIGNE
+  static const String authTokenKey = 'auth_token';
   static const String userDataKey = 'user_data';
   static const String isLoggedInKey = 'is_logged_in';
   static const String userTypeKey = 'user_type';

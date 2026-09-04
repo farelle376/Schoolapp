@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import '../services/eleve_service.dart';
+import '../services/annee_scolaire_service.dart';
+import '../model/annee_scolaire_model.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -12,15 +14,25 @@ class GestionElevesPage extends StatefulWidget {
   _GestionElevesPageState createState() => _GestionElevesPageState();
 }
 
-class _GestionElevesPageState extends State<GestionElevesPage> {
+class _GestionElevesPageState extends State<GestionElevesPage> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  // Services
+  final EleveService _eleveService = EleveService();
+  final AnneeScolaireService _anneeService = AnneeScolaireService();
+
+  // Données
   List<Map<String, dynamic>> _classes = [];
   List<Map<String, dynamic>> _allEleves = [];
   List<Map<String, dynamic>> _filteredEleves = [];
-  bool _isLoading = true;
-  String _searchQuery = '';
-  String _selectedFilter = 'Tous';
+  List<AnneeScolaire> _anneesScolaires = [];
+  int? _selectedAnneeId;
   int? _selectedClasseId;
   String? _selectedClasseNom;
+  String _searchQuery = '';
+  String _selectedFilter = 'Tous';
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -29,297 +41,295 @@ class _GestionElevesPageState extends State<GestionElevesPage> {
   }
 
   Future<void> _loadData() async {
-  setState(() => _isLoading = true);
-  
-  // 1. D'abord, charger les classes (rapide)
-  final classesResponse = await EleveService.getClasses();
-  
-  if (classesResponse['success'] != true) {
-    setState(() => _isLoading = false);
-    _showSnackBar(classesResponse['message'] ?? 'Erreur', Colors.red);
-    return;
-  }
-  
-  // Afficher immédiatement les classes
-  setState(() {
-    _classes = List<Map<String, dynamic>>.from(classesResponse['data']);
-    _isLoading = false; // L'écran s'affiche avec les classes mais sans élèves
-  });
-  
-  // 2. Ensuite, charger les élèves en arrière-plan (sans bloquer l'UI)
-  await _loadAllElevesInBackground();
-}
+    setState(() => _isLoading = true);
 
-Future<void> _loadAllElevesInBackground() async {
-  print('📚 Chargement des élèves en arrière-plan...');
-  
-  List<Map<String, dynamic>> tousLesEleves = [];
-  
-  // Charger les élèves pour chaque classe
-  for (var classe in _classes) {
-    final elevesResponse = await EleveService.getElevesByClasse(classe['id']);
-    
-    if (elevesResponse['success'] == true) {
-      final eleves = List<Map<String, dynamic>>.from(elevesResponse['data']);
-      for (var eleve in eleves) {
-        eleve['classe_nom'] = classe['nom'];
-        eleve['classe_id'] = classe['id'];
+    try {
+      // 1. Charger les classes
+      final classesResponse = await _eleveService.getClasses();
+      if (classesResponse['success'] == true) {
+        _classes = List<Map<String, dynamic>>.from(classesResponse['data']);
       }
-      tousLesEleves.addAll(eleves);
+
+      // 2. Charger les années scolaires
+      final annees = await _anneeService.getAnneesScolaires();
+      _anneesScolaires = annees;
+
+      // Déterminer l'année par défaut (en cours ou première)
+      if (_selectedAnneeId == null && annees.isNotEmpty) {
+        final anneeEnCours = await _anneeService.getAnneeEnCours();
+        if (anneeEnCours != null && annees.any((a) => a.id == anneeEnCours.id)) {
+          _selectedAnneeId = anneeEnCours.id;
+        } else {
+          _selectedAnneeId = annees.first.id;
+        }
+      }
+
+      // 3. Charger les élèves selon l'année et la classe sélectionnées
+      await _loadEleves();
+
+      setState(() => _isLoading = false);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showSnackBar('Erreur: $e', Colors.red);
     }
   }
-  
-  // Tri alphabétique
-  tousLesEleves.sort((a, b) {
-    int nomCompare = (a['nom'] ?? '').compareTo(b['nom'] ?? '');
-    if (nomCompare != 0) return nomCompare;
+
+  Future<void> _loadEleves() async {
+    if (_selectedAnneeId == null) {
+      _allEleves = [];
+      _filterEleves();
+      return;
+    }
+
+    List<Map<String, dynamic>> eleves = [];
+
+    if (_selectedClasseId != null) {
+      // Charger les élèves d'une classe spécifique pour l'année
+      final response = await _eleveService.getElevesByClasse(
+    _selectedClasseId!,
+    anneeScolaireId: _selectedAnneeId!,
+  ); // ✅ au lieu de getElevesByClasseAndAnnee
+  if (response['success'] == true) {
+    eleves = List<Map<String, dynamic>>.from(response['data']);
+  } 
+  }else {
+    
+      eleves = await _loadAllElevesByAnnee(_selectedAnneeId!);
+    }
+
+    // Enrichir les données avec les emails des parents
+    for (var eleve in eleves) {
+      if (eleve['parents'] != null && eleve['parents'] is List) {
+        for (var parent in eleve['parents']) {
+          if (parent['type'] == 'pere') {
+            eleve['email_papa'] = parent['email'] ?? '';
+          } else if (parent['type'] == 'mere') {
+            eleve['email_maman'] = parent['email'] ?? '';
+          }
+        }
+      }
+      // Si la classe n'est pas déjà présente dans les données
+      if (eleve['classe_nom'] == null && eleve['classe'] != null) {
+        eleve['classe_nom'] = eleve['classe']['nom'] ?? '';
+        eleve['classe_id'] = eleve['classe']['id'] ?? 0;
+      }
+    }
+
+    setState(() {
+      _allEleves = eleves;
+      _filterEleves();
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadAllElevesByAnnee(int anneeId) async {
+  List<Map<String, dynamic>> allEleves = [];
+
+  if (_classes.isNotEmpty) {
+    for (var classe in _classes) {
+      final response = await _eleveService.getElevesByClasse(
+        classe['id'],
+        anneeScolaireId: anneeId,
+      ); // ✅ route qui fonctionne, filtre déjà par classe ET année
+      if (response['success'] == true) {
+        final eleves = List<Map<String, dynamic>>.from(response['data']);
+        for (var eleve in eleves) {
+          eleve['classe_nom'] = classe['nom'];
+          eleve['classe_id'] = classe['id'];
+        }
+        allEleves.addAll(eleves);
+      }
+    }
+  } else {
+    _showSnackBar('Aucune classe disponible pour charger les élèves', Colors.orange);
+  }
+
+  allEleves.sort((a, b) {
+    int compare = (a['nom'] ?? '').compareTo(b['nom'] ?? '');
+    if (compare != 0) return compare;
     return (a['prenom'] ?? '').compareTo(b['prenom'] ?? '');
   });
-  
-  // Mettre à jour l'affichage avec les élèves
-  setState(() {
-    _allEleves = tousLesEleves;
-    _filteredEleves = tousLesEleves;
-  });
-  
-  print('✅ ${tousLesEleves.length} élèves chargés en arrière-plan');
-} 
+  return allEleves;
+}
 
   void _filterEleves() {
     setState(() {
       _filteredEleves = _allEleves.where((eleve) {
-        final matchesClasse = _selectedClasseId == null || 
+        final matchesClasse = _selectedClasseId == null ||
             eleve['classe_id'] == _selectedClasseId;
-        
+
         final fullName = eleve['full_name'] ?? '';
         final matchesSearch = _searchQuery.isEmpty ||
             fullName.toLowerCase().contains(_searchQuery.toLowerCase());
-        
+
         final sexe = eleve['sexe'] ?? '';
         final matchesFilter = _selectedFilter == 'Tous' ||
             (_selectedFilter == 'Garçons' && (sexe == 'M' || sexe == 'Masculin')) ||
             (_selectedFilter == 'Filles' && (sexe == 'F' || sexe == 'Feminin'));
-        
+
         return matchesClasse && matchesSearch && matchesFilter;
       }).toList();
     });
   }
 
-Future<void> _generatePdf() async {
-  if (_selectedClasseId == null) {
-    _showSnackBar('Veuillez sélectionner une classe', Colors.orange);
-    return;
-  }
-  
-  if (_filteredEleves.isEmpty) {
-    _showSnackBar('Aucun élève à exporter', Colors.orange);
-    return;
-  }
-  
-  final pdf = pw.Document();
-  
-  pdf.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      build: (pw.Context context) {
-        return pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            // En-tête
-            pw.Center(
-              child: pw.Text(
-                'SchoolApp Benin',
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blue,
-                ),
-              ),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Center(
-              child: pw.Text(
-                'Liste des élèves',
-                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-              ),
-            ),
-            pw.Center(
-              child: pw.Text(
-                'Classe: ${_selectedClasseNom ?? ''}',
-                style: pw.TextStyle(fontSize: 14),
-              ),
-            ),
-            pw.Center(
-              child: pw.Text(
-                'Date: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
-                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
-              ),
-            ),
-            pw.Divider(),
-            pw.SizedBox(height: 20),
-            
-            // Tableau avec toutes les colonnes
-            pw.Table(
-              border: pw.TableBorder.all(),
-              columnWidths: {
-                0: pw.FixedColumnWidth(30),   // N°
-                1: pw.FixedColumnWidth(80),   // Nom
-                2: pw.FixedColumnWidth(80),   // Prénom
-                3: pw.FixedColumnWidth(50),   // Sexe
-                4: pw.FixedColumnWidth(90),   // Tél Papa
-                5: pw.FixedColumnWidth(90),   // Tél Maman
-                6: pw.FixedColumnWidth(120),  // Email Papa
-                7: pw.FixedColumnWidth(120),  // Email Maman
-              },
-              children: [
-                // En-tête du tableau
-                pw.TableRow(
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.grey300,
+  Future<void> _generatePdf() async {
+    if (_selectedClasseId == null) {
+      _showSnackBar('Veuillez sélectionner une classe', Colors.orange);
+      return;
+    }
+
+    if (_filteredEleves.isEmpty) {
+      _showSnackBar('Aucun élève à exporter', Colors.orange);
+      return;
+    }
+
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(
+                child: pw.Text(
+                  'SchoolApp Benin',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.blue,
                   ),
-                  children: [
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('N°', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Nom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Prénom', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Sexe', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Tél Papa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Tél Maman', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Email Papa', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.all(8),
-                      child: pw.Text('Email Maman', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                    ),
-                  ],
                 ),
-                // Lignes du tableau
-                ..._filteredEleves.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final eleve = entry.value;
-                  final sexe = eleve['sexe'] ?? '';
-                  
-                  // Convertir le sexe en texte complet
-                  String sexeTexte = '';
-                  if (sexe == 'M' || sexe == 'Masculin') {
-                    sexeTexte = 'Masculin';
-                  } else if (sexe == 'F' || sexe == 'Feminin') {
-                    sexeTexte = 'Féminin';
-                  } else {
-                    sexeTexte = sexe;
-                  }
-                  
-                  // Récupérer les emails des parents
-                  String emailPapa = '';
-                  String emailMaman = '';
-                  
-                  if (eleve['parents'] != null && eleve['parents'] is List) {
-                    for (var parent in eleve['parents']) {
-                      if (parent['type'] == 'pere') {
-                        emailPapa = parent['email'] ?? '';
-                      } else if (parent['type'] == 'mere') {
-                        emailMaman = parent['email'] ?? '';
-                      }
-                    }
-                  }
-                  
-                  return pw.TableRow(
-                    children: [
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text('${index + 1}', textAlign: pw.TextAlign.center),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(eleve['nom'] ?? '-'),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(eleve['prenom'] ?? '-'),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(sexeTexte, textAlign: pw.TextAlign.center),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(eleve['num_papa'] ?? '-'),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(eleve['num_maman'] ?? '-'),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(emailPapa.isNotEmpty ? emailPapa : '-'),
-                      ),
-                      pw.Padding(
-                        padding: pw.EdgeInsets.all(6),
-                        child: pw.Text(emailMaman.isNotEmpty ? emailMaman : '-'),
-                      ),
-                    ],
-                  );
-                }),
-              ],
-            ),
-            
-            pw.SizedBox(height: 20),
-            pw.Center(
-              child: pw.Text(
-                'Total: ${_filteredEleves.length} élève(s)',
-                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
               ),
-            ),
-          ],
+              pw.SizedBox(height: 10),
+              pw.Center(
+                child: pw.Text(
+                  'Liste des élèves',
+                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                ),
+              ),
+              pw.Center(
+                child: pw.Text(
+                  'Classe: ${_selectedClasseNom ?? ''}',
+                  style: pw.TextStyle(fontSize: 14),
+                ),
+              ),
+              pw.Center(
+                child: pw.Text(
+                  'Date: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
+                ),
+              ),
+              pw.Divider(),
+              pw.SizedBox(height: 20),
+
+              pw.Table(
+                border: pw.TableBorder.all(),
+                columnWidths: {
+                  0: pw.FixedColumnWidth(30),
+                  1: pw.FixedColumnWidth(80),
+                  2: pw.FixedColumnWidth(80),
+                  3: pw.FixedColumnWidth(50),
+                  4: pw.FixedColumnWidth(90),
+                  5: pw.FixedColumnWidth(90),
+                  6: pw.FixedColumnWidth(120),
+                  7: pw.FixedColumnWidth(120),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                    children: [
+                      _pdfHeaderCell('N°'),
+                      _pdfHeaderCell('Nom'),
+                      _pdfHeaderCell('Prénom'),
+                      _pdfHeaderCell('Sexe'),
+                      _pdfHeaderCell('Tél Papa'),
+                      _pdfHeaderCell('Tél Maman'),
+                      _pdfHeaderCell('Email Papa'),
+                      _pdfHeaderCell('Email Maman'),
+                    ],
+                  ),
+                  ..._filteredEleves.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final eleve = entry.value;
+                    final sexe = eleve['sexe'] ?? '';
+                    String sexeTexte = '';
+                    if (sexe == 'M' || sexe == 'Masculin') sexeTexte = 'Masculin';
+                    else if (sexe == 'F' || sexe == 'Feminin') sexeTexte = 'Féminin';
+                    else sexeTexte = sexe;
+
+                    return pw.TableRow(
+                      children: [
+                        _pdfCell('${index + 1}', center: true),
+                        _pdfCell(eleve['nom'] ?? '-'),
+                        _pdfCell(eleve['prenom'] ?? '-'),
+                        _pdfCell(sexeTexte, center: true),
+                        _pdfCell(eleve['num_papa'] ?? '-'),
+                        _pdfCell(eleve['num_maman'] ?? '-'),
+                        _pdfCell(eleve['email_papa'] ?? '-'),
+                        _pdfCell(eleve['email_maman'] ?? '-'),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+
+              pw.SizedBox(height: 20),
+              pw.Center(
+                child: pw.Text(
+                  'Total: ${_filteredEleves.length} élève(s)',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.grey),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.sharePdf(
+      bytes: await pdf.save(),
+      filename: 'liste_eleves_${_selectedClasseNom ?? 'classe'}.pdf',
+    );
+  }
+
+  pw.Widget _pdfHeaderCell(String text) {
+    return pw.Padding(
+      padding: pw.EdgeInsets.all(6),
+      child: pw.Text(text, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+    );
+  }
+
+  pw.Widget _pdfCell(String text, {bool center = false}) {
+    return pw.Padding(
+      padding: pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text,
+        textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
+        style: pw.TextStyle(fontSize: 10),
+      ),
+    );
+  }
+
+  Future<void> _ajouterEleve() async {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return AddElevePanel(
+          classes: _classes,
+          onAdd: () {
+            _loadData();
+          },
         );
       },
-    ),
-  );
-  
-  await Printing.sharePdf(
-    bytes: await pdf.save(),
-    filename: 'liste_eleves_${_selectedClasseNom ?? 'classe'}.pdf',
-  );
-} 
-
-Future<void> _ajouterEleve() async {
-  showGeneralDialog(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: '',
-    transitionDuration: const Duration(milliseconds: 250),
-    pageBuilder: (context, animation, secondaryAnimation) {
-      return AddElevePanel(
-        classes: _classes,
-        onAdd: () {
-          _loadData(); 
-        },
-      );
-    },
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      return child;
-    },
-  );
-}
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return child;
+      },
+    );
+  }
 
   Future<void> _modifierEleve(Map<String, dynamic> eleve) async {
     final result = await showDialog<Map<String, dynamic>>(
@@ -329,10 +339,9 @@ Future<void> _ajouterEleve() async {
         eleve: eleve,
       ),
     );
-    
+
     if (result != null) {
-      final response = await EleveService.updateEleve(eleve['id'], result);
-      
+      final response = await _eleveService.updateEleve(eleve['id'], result);
       if (response['success'] == true) {
         _showSnackBar('Élève modifié avec succès', Colors.green);
         _loadData();
@@ -346,24 +355,23 @@ Future<void> _ajouterEleve() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Confirmation'),
+        title: const Text('Confirmation'),
         content: Text('Voulez-vous vraiment supprimer ${eleve['full_name'] ?? 'cet élève'} ?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Annuler'),
+            child: const Text('Annuler'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Supprimer', style: TextStyle(color: Colors.red)),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
-    
+
     if (confirm == true) {
-      final response = await EleveService.deleteEleve(eleve['id']);
-      
+      final response = await _eleveService.deleteEleve(eleve['id']);
       if (response['success'] == true) {
         _showSnackBar('Élève supprimé avec succès', Colors.green);
         _loadData();
@@ -392,12 +400,12 @@ Future<void> _ajouterEleve() async {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.black : const Color(0xFFF5F7FB),
       appBar: AppBar(
         title: const Text('Gestion des élèves'),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        backgroundColor: const Color(0xFF0D2B4E),
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -407,11 +415,6 @@ Future<void> _ajouterEleve() async {
               onPressed: _generatePdf,
               tooltip: 'Exporter en PDF',
             ),
-            IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _ajouterEleve,
-            tooltip: 'Ajouter un Eleve',
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -423,6 +426,7 @@ Future<void> _ajouterEleve() async {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // STATS CARDS
                 Container(
                   padding: const EdgeInsets.all(16),
                   child: Row(
@@ -435,58 +439,113 @@ Future<void> _ajouterEleve() async {
                     ],
                   ),
                 ),
+                // FILTRES : Année, Classe, Sexe
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: isDarkMode ? Colors.grey.shade800 : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300),
-                        ),
-                        child: DropdownButton<int>(
-                          value: _selectedClasseId,
-                          hint: Text('Toutes les classes', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87)),
-                          underline: const SizedBox(),
-                          dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
-                          items: [
-                            const DropdownMenuItem<int>(
-                              value: null,
-                              child: Text('Toutes les classes'),
+                      // Sélecteur d'année
+                      if (_anneesScolaires.isNotEmpty)
+                        Row(
+                          children: [
+                            const Text(
+                              'Année : ',
+                              style: TextStyle(fontWeight: FontWeight.w500),
                             ),
-                            ..._classes.map((classe) {
-                              return DropdownMenuItem<int>(
-                                value: classe['id'],
-                                child: Text(classe['nom']),
-                              );
-                            }).toList(),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButton<int>(
+                                value: _selectedAnneeId,
+                                isExpanded: true,
+                                dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                                style: TextStyle(
+                                  color: isDarkMode ? Colors.white : Colors.black,
+                                ),
+                                underline: Container(
+                                  height: 1,
+                                  color: isDarkMode ? Colors.grey.shade600 : Colors.grey.shade300,
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: null,
+                                    child: Text('Sélectionnez une année'),
+                                  ),
+                                  ..._anneesScolaires.map((annee) {
+                                    return DropdownMenuItem(
+                                      value: annee.id,
+                                      child: Text(annee.libelle ?? 'Année ${annee.id}'),
+                                    );
+                                  }),
+                                ],
+                                onChanged: (value) async {
+                                  setState(() {
+                                    _selectedAnneeId = value;
+                                    _selectedClasseId = null;
+                                    _selectedClasseNom = null;
+                                  });
+                                  await _loadEleves();
+                                },
+                              ),
+                            ),
                           ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedClasseId = value;
-                              if (value != null) {
-                                final classe = _classes.firstWhere((c) => c['id'] == value);
-                                _selectedClasseNom = classe['nom'];
-                              } else {
-                                _selectedClasseNom = null;
-                              }
-                              _filterEleves();
-                            });
-                          },
                         ),
+                      const SizedBox(height: 8),
+                      // Sélecteur de classe et filtres sexe
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300),
+                              ),
+                              child: DropdownButton<int>(
+                                value: _selectedClasseId,
+                                hint: Text('Toutes les classes', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87)),
+                                underline: const SizedBox(),
+                                dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                                isExpanded: true,
+                                items: [
+                                  const DropdownMenuItem<int>(
+                                    value: null,
+                                    child: Text('Toutes les classes'),
+                                  ),
+                                  ..._classes.map((classe) {
+                                    return DropdownMenuItem<int>(
+                                      value: classe['id'],
+                                      child: Text(classe['nom']),
+                                    );
+                                  }).toList(),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedClasseId = value;
+                                    if (value != null) {
+                                      final classe = _classes.firstWhere((c) => c['id'] == value);
+                                      _selectedClasseNom = classe['nom'];
+                                    } else {
+                                      _selectedClasseNom = null;
+                                    }
+                                    _filterEleves();
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _buildFilterChip('Tous', _selectedFilter == 'Tous'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('Garçons', _selectedFilter == 'Garçons'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('Filles', _selectedFilter == 'Filles'),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      _buildFilterChip('Tous', _selectedFilter == 'Tous'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Garçons', _selectedFilter == 'Garçons'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Filles', _selectedFilter == 'Filles'),
-                      const Spacer(),
                     ],
                   ),
                 ),
+                // BARRE DE RECHERCHE
                 Container(
                   padding: const EdgeInsets.all(16),
                   child: TextField(
@@ -509,6 +568,7 @@ Future<void> _ajouterEleve() async {
                     ),
                   ),
                 ),
+                // LISTE DES ÉLÈVES
                 Expanded(
                   child: _filteredEleves.isEmpty
                       ? Center(
@@ -517,7 +577,12 @@ Future<void> _ajouterEleve() async {
                             children: [
                               Icon(Icons.people_outline, size: 64, color: Colors.grey),
                               const SizedBox(height: 16),
-                              Text('Aucun élève trouvé', style: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600)),
+                              Text(
+                                _selectedAnneeId == null
+                                    ? 'Veuillez sélectionner une année'
+                                    : 'Aucun élève trouvé',
+                                style: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600),
+                              ),
                             ],
                           ),
                         )
@@ -531,25 +596,25 @@ Future<void> _ajouterEleve() async {
                                 isDarkMode ? Colors.grey.shade800 : const Color(0xFFF47C3C).withOpacity(0.1),
                               ),
                               columns: [
-                                DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Nom complet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Sexe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Classe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Email Papa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Email Maman', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
-                                DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDarkMode ? Colors.white : Colors.black87))),
+                                const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Nom complet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Sexe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Classe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Email Papa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Email Maman', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                                const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                               ],
                               rows: _filteredEleves.asMap().entries.map((entry) {
                                 final index = entry.key;
                                 final eleve = entry.value;
                                 final sexe = eleve['sexe'] ?? '';
                                 final isMasculin = sexe == 'M' || sexe == 'Masculin';
-                                
+
                                 return DataRow(
                                   color: MaterialStateProperty.all(isDarkMode ? Colors.grey.shade900 : Colors.white),
                                   cells: [
-                                    DataCell(Text('${index + 1}', style: TextStyle(color: isDarkMode ? Colors.grey.shade300 : Colors.black87))),
-                                    DataCell(Text(eleve['full_name'] ?? '-', style: TextStyle(color: isDarkMode ? Colors.grey.shade300 : Colors.black87))),
+                                    DataCell(Text('${index + 1}')),
+                                    DataCell(Text(eleve['full_name'] ?? '-')),
                                     DataCell(
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -567,24 +632,20 @@ Future<void> _ajouterEleve() async {
                                         ),
                                       ),
                                     ),
-                                    DataCell(Text(eleve['classe_nom'] ?? '-', style: TextStyle(color: isDarkMode ? Colors.grey.shade300 : Colors.black87))),
+                                    DataCell(Text(eleve['classe_nom'] ?? '-')),
                                     DataCell(
-                                    Text(eleve['email_papa'] ?? '-', 
-                                    style: TextStyle(
-                                    color: isDarkMode ? Colors.grey.shade300 : Colors.black87,
-                                    fontSize: 11,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    )
+                                      Text(
+                                        eleve['email_papa'] ?? '-',
+                                        style: const TextStyle(fontSize: 11),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                     DataCell(
-                                    Text(eleve['email_maman'] ?? '-', 
-                                    style: TextStyle(
-                                    color: isDarkMode ? Colors.grey.shade300 : Colors.black87,
-                                    fontSize: 11,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    )
+                                      Text(
+                                        eleve['email_maman'] ?? '-',
+                                        style: const TextStyle(fontSize: 11),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                     DataCell(
                                       Row(
@@ -612,12 +673,19 @@ Future<void> _ajouterEleve() async {
                 ),
               ],
             ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'fab_gestion_eleves',
+        onPressed: _ajouterEleve,
+        backgroundColor: const Color(0xFFF47C3C),
+        child: const Icon(Icons.add),
+        tooltip: 'Ajouter un élève',
+      ),
     );
   }
 
   Widget _buildStatCard(String title, String value, Color color) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -658,7 +726,7 @@ Future<void> _ajouterEleve() async {
 
   Widget _buildFilterChip(String label, bool isSelected) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+
     return FilterChip(
       label: Text(label),
       selected: isSelected,
@@ -684,7 +752,7 @@ Future<void> _ajouterEleve() async {
   }
 }
 
-// Dialogue pour ajouter/modifier un élève
+// Dialogue pour ajouter/modifier un élève (inchangé)
 class _AjouterModifierEleveDialog extends StatefulWidget {
   final List<Map<String, dynamic>> classes;
   final Map<String, dynamic>? eleve;

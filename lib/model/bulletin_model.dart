@@ -1,98 +1,157 @@
-// lib/models/bulletin_model.dart
+// lib/model/bulletin_model.dart
 
-class BulletinDetailModel {
+import 'package:flutter/material.dart';
+
+class BulletinModel {
   final int id;
-  final EleveInfo eleve;
+  final int inscriptionId;
+  final String eleveNom;
+  final String elevePrenom;
+  final String classe;
+  final String anneeScolaire;
   final String trimestre;
   final double moyenneGenerale;
-  final String mention;
   final int rang;
   final int totalEleves;
-  final String? appreciationGenerale;
-  final List<MatiereNote> matieres;
+  final String mention;
+  final String? appreciation;
+  final List<MatiereBulletin> matieres;
+  final String dateGeneration;
 
-  BulletinDetailModel({
+  BulletinModel({
     required this.id,
-    required this.eleve,
+    required this.inscriptionId,
+    required this.eleveNom,
+    required this.elevePrenom,
+    required this.classe,
+    required this.anneeScolaire,
     required this.trimestre,
     required this.moyenneGenerale,
-    required this.mention,
     required this.rang,
     required this.totalEleves,
-    this.appreciationGenerale,
+    required this.mention,
+    this.appreciation,
     required this.matieres,
+    required this.dateGeneration,
   });
 
-  factory BulletinDetailModel.fromJson(Map<String, dynamic> json) {
-    return BulletinDetailModel(
-      id: json['id'],
-      eleve: EleveInfo.fromJson(json['eleve']),
-      trimestre: json['trimestre'].toString(),
+  // ✅ La factory DOIT être à l'intérieur de la classe
+  factory BulletinModel.fromJson(Map<String, dynamic> json) {
+    return BulletinModel(
+      id: json['id'] ?? 0,
+      inscriptionId: json['inscription_id'] ?? 0,
+      eleveNom: json['eleve_nom'] ?? '',
+      elevePrenom: json['eleve_prenom'] ?? '',
+      classe: json['classe'] ?? '',
+      // ⚠️ Auparavant l'écran recalculait l'année scolaire à partir de la
+      // date du jour (DateTime.now().year) au lieu de lire la vraie année
+      // scolaire de l'inscription — ce qui affichait la mauvaise année dès
+      // qu'on consultait un bulletin qui n'est pas celui de l'année en cours.
+      anneeScolaire: json['annee_scolaire']?.toString() ?? '',
+      trimestre: json['trimestre'] ?? '1',
       moyenneGenerale: (json['moyenne_generale'] ?? 0).toDouble(),
-      mention: json['mention'] ?? '',
       rang: json['rang'] ?? 0,
       totalEleves: json['total_eleves'] ?? 0,
-      appreciationGenerale: json['appreciation_generale'],
-      matieres: (json['matieres'] as List)
-          .map((m) => MatiereNote.fromJson(m))
-          .toList(),
+      mention: json['mention'] ?? '',
+      appreciation: json['appreciation'],
+      matieres: (json['matieres'] as List?)?.map((e) => MatiereBulletin.fromJson(e)).toList() ?? [],
+      dateGeneration: json['date_generation'] ?? '',
     );
+  }
+
+  String get fullName => '$elevePrenom $eleveNom';
+  
+  String get mentionLabel {
+    if (moyenneGenerale >= 16) return 'Très Bien';
+    if (moyenneGenerale >= 14) return 'Bien';
+    if (moyenneGenerale >= 12) return 'Assez Bien';
+    if (moyenneGenerale >= 10) return 'Passable';
+    return 'Insuffisant';
+  }
+  
+  Color get mentionColor {
+    if (moyenneGenerale >= 16) return Colors.green;
+    if (moyenneGenerale >= 14) return Colors.lightGreen;
+    if (moyenneGenerale >= 12) return Colors.orange;
+    if (moyenneGenerale >= 10) return Colors.amber;
+    return Colors.red;
   }
 }
 
-class EleveInfo {
+class MatiereBulletin {
   final int id;
   final String nom;
-  final String prenom;
-  final String classe;
-  final String? matricule;
+  final int? coefficient;
+  final double moyenne;
+  final double moyenneClasse;
+  final int rang;
+  final int totalEleves;
+  final List<NoteDetail> devoirs;
+  final List<NoteDetail> interrogations;
 
-  EleveInfo({
+  MatiereBulletin({
     required this.id,
     required this.nom,
-    required this.prenom,
-    required this.classe,
-    this.matricule,
+    this.coefficient,
+    required this.moyenne,
+    required this.moyenneClasse,
+    required this.rang,
+    required this.totalEleves,
+    required this.devoirs,
+    required this.interrogations,
   });
 
-  String get fullName => '$nom $prenom';
-
-  factory EleveInfo.fromJson(Map<String, dynamic> json) {
-    return EleveInfo(
-      id: json['id'],
-      nom: json['nom'],
-      prenom: json['prenom'],
-      classe: json['classe'],
-      matricule: json['matricule'],
+  // ✅ Ajout de la factory pour MatiereBulletin (si elle n'existe pas)
+  factory MatiereBulletin.fromJson(Map<String, dynamic> json) {
+    // ⚠️ Le backend (ParentController::getMatieresFromBulletin) envoie
+    // 'matiere_nom' et 'moyenne_eleve' — pas 'nom' / 'moyenne'. Avec les
+    // anciennes clés, chaque matière du bulletin s'affichait sans nom et
+    // avec une moyenne à 0.0 côté parent, même quand tout était calculé
+    // correctement côté serveur (même bug que côté admin/gestbulletin).
+    return MatiereBulletin(
+      id: json['id'] ?? 0,
+      nom: json['matiere_nom'] ?? json['nom'] ?? '',
+      coefficient: json['coefficient'],
+      moyenne: double.tryParse(
+              (json['moyenne_eleve'] ?? json['moyenne'])?.toString() ?? '') ??
+          0.0,
+      moyenneClasse: (json['moyenne_classe'] ?? 0).toDouble(),
+      rang: json['rang'] ?? 0,
+      totalEleves: json['total_eleves'] ?? 0,
+      devoirs: (json['devoirs'] as List?)?.map((e) => NoteDetail.fromJson(e)).toList() ?? [],
+      interrogations: (json['interrogations'] as List?)?.map((e) => NoteDetail.fromJson(e)).toList() ?? [],
     );
+  }
+
+  String get moyenneTexte => moyenne.toStringAsFixed(1);
+  String get rangTexte => '$rang/$totalEleves';
+  
+  Color get moyenneColor {
+    if (moyenne >= 16) return Colors.green;
+    if (moyenne >= 14) return Colors.lightGreen;
+    if (moyenne >= 12) return Colors.orange;
+    if (moyenne >= 10) return Colors.amber;
+    return Colors.red;
   }
 }
 
-class MatiereNote {
-  final String matiere;
+class NoteDetail {
+  final int numero;
   final double note;
-  final double moyenneClasse;
-  final int rang;
   final String appreciation;
-  final double coefficient;
 
-  MatiereNote({
-    required this.matiere,
+  NoteDetail({
+    required this.numero,
     required this.note,
-    required this.moyenneClasse,
-    required this.rang,
     required this.appreciation,
-    required this.coefficient,
   });
 
-  factory MatiereNote.fromJson(Map<String, dynamic> json) {
-    return MatiereNote(
-      matiere: json['matiere'],
+  // ✅ Ajout de la factory pour NoteDetail
+  factory NoteDetail.fromJson(Map<String, dynamic> json) {
+    return NoteDetail(
+      numero: json['numero'] ?? 0,
       note: (json['note'] ?? 0).toDouble(),
-      moyenneClasse: (json['moyenne_classe'] ?? 0).toDouble(),
-      rang: json['rang'] ?? 0,
       appreciation: json['appreciation'] ?? '',
-      coefficient: (json['coefficient'] ?? 1).toDouble(),
     );
   }
 }

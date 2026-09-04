@@ -43,3 +43,38 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ⚠️ Ajouté : le .gitignore d'origine (généré par `flutter create`) ne
+# couvrait que la partie Flutter. Comme ce dépôt contient aussi le backend
+# Laravel dans le même dossier, il manquait toutes les exclusions Laravel
+# ci-dessous — sans elles, `git add .` aurait envoyé vendor/, node_modules/
+# et surtout .env (mots de passe, clés Kkiapay) sur GitHub.
+
+# Laravel
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+.env
+.env.backup
+.env.production
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+/.fleet
+/.idea
+/.vscode
+storage/framework/cache/*
+!storage/framework/cache/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+storage/logs/*
+!storage/logs/.gitignore

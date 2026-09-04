@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../utils/constants.dart';
 import '../services/dashboard_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EleveNotesDialog extends StatefulWidget {
   final Map<String, dynamic> eleve;
@@ -35,9 +36,27 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
   }
 
   Future<void> _loadNotes() async {
+    // ✅ Récupérer l'inscription_id
+    final inscriptionId = widget.eleve['inscription_id'];
+    if (inscriptionId == null) {
+      print('❌ Aucun inscription_id trouvé pour cet élève');
+      setState(() {
+        _isLoading = false;
+        _notes = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de charger les notes : inscription non trouvée'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      final response = await _dashboardService.getEleveNotes(widget.eleve['id']);
+      // ✅ Utiliser inscription_id au lieu de eleve_id
+      final response = await _dashboardService.getEleveNotes(inscriptionId);
       
       if (response['success'] == true && response['data'] != null) {
         setState(() {
@@ -48,7 +67,7 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Erreur chargement notes: $e');
+      print('❌ Erreur chargement notes: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -69,9 +88,78 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
     return Colors.red;
   }
 
+  Future<void> _deleteNote(Map<String, dynamic> note) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmation'),
+        content: Text('Voulez-vous vraiment supprimer cette note (${note['note']}/20) ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('professeur_token');
+      
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Session expirée, veuillez vous reconnecter'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      
+      final url = Uri.parse('${Constants.baseUrl}/professeur/notes/${note['id']}');
+      final response = await http.delete(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        if (result['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Note supprimée avec succès'), backgroundColor: Colors.green),
+          );
+          await _loadNotes();
+          widget.onNoteUpdated();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Erreur'), backgroundColor: Colors.red),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur ${response.statusCode}'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      print('❌ Erreur suppression: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ✅ Raccourcir le nom pour l'affichage
     String displayName = widget.eleve['full_name'] ?? '${widget.eleve['prenom']} ${widget.eleve['nom']}';
     if (displayName.length > 20) {
       displayName = displayName.substring(0, 18) + '...';
@@ -80,12 +168,12 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.grade, color: Color(0xFFF47C3C)),
-          SizedBox(width: 10),
+          Icon(Icons.grade, color: const Color(0xFFF47C3C)),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Notes de $displayName',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -93,17 +181,17 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
       ),
       content: Container(
         width: double.maxFinite,
-        constraints: BoxConstraints(maxHeight: 400),
+        constraints: const BoxConstraints(maxHeight: 400),
         child: _isLoading
-            ? Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator())
             : _notes.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.grade_outlined, size: 48, color: Colors.grey),
-                        SizedBox(height: 10),
-                        Text('Aucune note enregistrée'),
+                        const SizedBox(height: 10),
+                        const Text('Aucune note enregistrée'),
                       ],
                     ),
                   )
@@ -114,7 +202,7 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
                       final noteValue = _toDouble(note['note']);
                       
                       return Card(
-                        margin: EdgeInsets.only(bottom: 8),
+                        margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
                           leading: CircleAvatar(
                             backgroundColor: _getNoteColor(noteValue).withOpacity(0.1),
@@ -127,19 +215,25 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
                             ),
                           ),
                           title: Text(
-                          note['type_note'] == 'interrogation' ? 'Interro' : 'Devoir',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                       ),
-                          subtitle: Text('Trimestre ${note['trimestre']}'),
-                          trailing: note['is_validated'] == true
-                              ? Chip(
-                                  label: Text('Validé', style: TextStyle(fontSize: 10)),
-                                  backgroundColor: Colors.green.shade100,
-                                )
-                              : Chip(
-                                  label: Text('En attente', style: TextStyle(fontSize: 10)),
-                                  backgroundColor: Colors.orange.shade100,
+                            note['type_note'] == 'interrogation' ? 'Interrogation' : 'Devoir',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Trimestre ${note['trimestre']}'),
+                              if (note['created_at'] != null)
+                                Text(
+                                  'Date: ${_formatDate(note['created_at'])}',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
                                 ),
+                            ],
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                            onPressed: () => _deleteNote(note),
+                            tooltip: 'Supprimer',
+                          ),
                         ),
                       );
                     },
@@ -148,9 +242,19 @@ class _EleveNotesDialogState extends State<EleveNotesDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('Fermer'),
+          child: const Text('Fermer'),
         ),
       ],
     );
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null) return '';
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return '';
+    }
   }
 }

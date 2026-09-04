@@ -160,7 +160,13 @@ class _ParentLoginPageState extends State<ParentLoginPage> {
                       topRight: Radius.circular(25),
                     ),
                   ),
-                  child: Column(
+                  // ⚠️ SingleChildScrollView : sans ça, l'ouverture du
+                  // clavier réduit l'espace vertical disponible et ce
+                  // Column (drag handle + titre + formulaire) déborde
+                  // ("RenderFlex overflowed"). Avec le scroll, le contenu
+                  // défile au lieu de déborder.
+                  child: SingleChildScrollView(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Center(
@@ -253,6 +259,7 @@ class _ParentLoginPageState extends State<ParentLoginPage> {
                         ),
                       ),
                     ],
+                    ),
                   ),
                 ),
               ),

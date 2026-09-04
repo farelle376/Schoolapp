@@ -1,5 +1,10 @@
+// lib/screens/gestion_matieres_page.dart
+
 import 'package:flutter/material.dart';
 import '../services/matiere_service.dart';
+import '../services/classmat_service.dart';
+import '../services/annee_scolaire_service.dart';
+import '../model/annee_scolaire_model.dart';
 
 class GestionMatieresPage extends StatefulWidget {
   @override
@@ -7,8 +12,13 @@ class GestionMatieresPage extends StatefulWidget {
 }
 
 class _GestionMatieresPageState extends State<GestionMatieresPage> {
+  final MatiereService _matiereService = MatiereService();
+  final AnneeScolaireService _anneeService = AnneeScolaireService();
+
   List<Map<String, dynamic>> _matieres = [];
   List<Map<String, dynamic>> _filteredMatieres = [];
+  List<AnneeScolaire> _anneesScolaires = [];
+  int? _selectedAnneeId;
   bool _isLoading = true;
   String _searchQuery = '';
 
@@ -20,20 +30,49 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
-    final response = await MatiereService.getMatieres();
-    
-    if (response['success'] == true) {
-      setState(() {
-        _matieres = List<Map<String, dynamic>>.from(response['data']);
-        _filteredMatieres = _matieres;
-        _isLoading = false;
-      });
-    } else {
+
+    try {
+      // Charger les années
+      final annees = await _anneeService.getAnneesScolaires();
+      _anneesScolaires = annees;
+
+      // Déterminer l'année par défaut (en cours ou première)
+      if (_selectedAnneeId == null && annees.isNotEmpty) {
+        final anneeEnCours = await _anneeService.getAnneeEnCours();
+        if (anneeEnCours != null && annees.any((a) => a.id == anneeEnCours.id)) {
+          _selectedAnneeId = anneeEnCours.id;
+        } else {
+          _selectedAnneeId = annees.first.id;
+        }
+      }
+
+      // Charger les matières avec le filtre année
+      await _chargerMatieres();
+    } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
+      _showSnackBar('Erreur: $e', Colors.red);
     }
   }
+
+Future<void> _chargerMatieres() async {
+  setState(() => _isLoading = true);
+
+  try {
+    // ✅ Utiliser getMatieresList()
+    final matieres = await _matiereService.getMatieresList(
+      anneeScolaireId: _selectedAnneeId,
+    );
+
+    setState(() {
+      _matieres = matieres;
+      _filteredMatieres = matieres;
+      _isLoading = false;
+    });
+  } catch (e) {
+    setState(() => _isLoading = false);
+    _showSnackBar('Erreur: $e', Colors.red);
+  }
+}
 
   void _filterMatieres() {
     setState(() {
@@ -49,12 +88,12 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
       context: context,
       builder: (context) => _AjouterModifierMatiereDialog(),
     );
-    
+
     if (result != null) {
-      final response = await MatiereService.addMatiere(result);
+      final response = await _matiereService.addMatiere(result);
       if (response['success'] == true) {
         _showSnackBar('Matière ajoutée avec succès', Colors.green);
-        _loadData();
+        await _chargerMatieres();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -66,12 +105,12 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
       context: context,
       builder: (context) => _AjouterModifierMatiereDialog(matiere: matiere),
     );
-    
+
     if (result != null) {
-      final response = await MatiereService.updateMatiere(matiere['id'], result);
+      final response = await _matiereService.updateMatiere(matiere['id'], result);
       if (response['success'] == true) {
         _showSnackBar('Matière modifiée avec succès', Colors.green);
-        _loadData();
+        await _chargerMatieres();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -96,12 +135,12 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
         ],
       ),
     );
-    
+
     if (confirm == true) {
-      final response = await MatiereService.deleteMatiere(matiere['id']);
+      final response = await _matiereService.deleteMatiere(matiere['id']);
       if (response['success'] == true) {
         _showSnackBar('Matière supprimée avec succès', Colors.green);
-        _loadData();
+        await _chargerMatieres();
       } else {
         _showSnackBar(response['message'] ?? 'Erreur', Colors.red);
       }
@@ -117,7 +156,7 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -133,7 +172,7 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            onPressed: _chargerMatieres,
             tooltip: 'Actualiser',
           ),
         ],
@@ -142,6 +181,53 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // SÉLECTEUR D'ANNÉE SCOLAIRE
+                if (_anneesScolaires.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: isDarkMode ? Colors.grey.shade900 : Colors.white,
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Année : ',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButton<int>(
+                            value: _selectedAnneeId,
+                            isExpanded: true,
+                            dropdownColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white : Colors.black,
+                            ),
+                            underline: Container(
+                              height: 1,
+                              color: isDarkMode ? Colors.grey.shade600 : Colors.grey.shade300,
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('Toutes les années'),
+                              ),
+                              ..._anneesScolaires.map((annee) {
+                                return DropdownMenuItem(
+                                  value: annee.id,
+                                  child: Text(annee.libelle ?? 'Année ${annee.id}'),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) async {
+                              setState(() {
+                                _selectedAnneeId = value;
+                              });
+                              await _chargerMatieres();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // STATS CARDS
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -149,7 +235,14 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                     children: [
                       _buildStatCard('Total matières', _matieres.length.toString(), const Color.fromARGB(255, 4, 252, 223)),
                       const SizedBox(width: 12),
-                      _buildStatCard('Coef. moyen', _matieres.isEmpty ? '0' : (_matieres.fold(0.0, (sum, m) => sum + (m['coefficient'] ?? 1)) / _matieres.length).toStringAsFixed(1), const Color(0xFFF47C3C)),
+                      _buildStatCard(
+                        'Coef. moyen',
+                        _matieres.isEmpty
+                            ? '0'
+                            : (_matieres.fold(0.0, (sum, m) => sum + (m['coefficient'] ?? 1)) / _matieres.length)
+                                .toStringAsFixed(1),
+                        const Color(0xFFF47C3C),
+                      ),
                     ],
                   ),
                 ),
@@ -161,15 +254,32 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                       _searchQuery = value;
                       _filterMatieres();
                     },
+                    style: TextStyle(
+                      color: isDarkMode ? Colors.white : Colors.black,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'Rechercher une matière...',
-                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                      hintStyle: TextStyle(
+                        color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFF47C3C), width: 1),
+                      ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: isDarkMode ? Colors.grey.shade800 : Colors.white,
                     ),
                   ),
                 ),
@@ -182,7 +292,14 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                             children: [
                               Icon(Icons.book, size: 64, color: Colors.grey),
                               const SizedBox(height: 16),
-                              const Text('Aucune matière trouvée'),
+                              Text(
+                                _selectedAnneeId == null
+                                    ? 'Veuillez sélectionner une année'
+                                    : 'Aucune matière trouvée pour cette année',
+                                style: TextStyle(
+                                  color: isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600,
+                                ),
+                              ),
                             ],
                           ),
                         )
@@ -193,6 +310,15 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                             headingRowColor: MaterialStateProperty.all(
                               isDarkMode ? Colors.grey.shade800 : const Color(0xFFF47C3C).withOpacity(0.1),
                             ),
+                            headingTextStyle: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            dataRowColor: MaterialStateProperty.resolveWith<Color?>(
+                              (states) => isDarkMode ? const Color(0xFF2A2A2A) : Colors.transparent,
+                            ),
+                            dividerThickness: 0,
                             columns: const [
                               DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                               DataColumn(label: Text('Nom de la matière', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
@@ -202,8 +328,16 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                             rows: _filteredMatieres.asMap().entries.map((entry) {
                               final index = entry.key;
                               final matiere = entry.value;
-                              
+
                               return DataRow(
+                                color: MaterialStateProperty.resolveWith<Color?>(
+                                  (states) {
+                                    if (index % 2 == 0) {
+                                      return isDarkMode ? Colors.grey.shade900 : Colors.grey.shade50;
+                                    }
+                                    return null;
+                                  },
+                                ),
                                 cells: [
                                   DataCell(Text('${index + 1}')),
                                   DataCell(Text(matiere['nom'])),
@@ -211,12 +345,14 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: Colors.orange.shade50,
+                                        color: isDarkMode
+                                            ? Colors.orange.withOpacity(0.2)
+                                            : Colors.orange.shade50,
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
                                         'Coef. ${matiere['coefficient'] ?? 1}',
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.orange,
                                           fontWeight: FontWeight.bold,
@@ -293,7 +429,7 @@ class _GestionMatieresPageState extends State<GestionMatieresPage> {
   }
 }
 
-// Dialogue pour ajouter/modifier une matière
+// Dialogue pour ajouter/modifier une matière (inchangé)
 class _AjouterModifierMatiereDialog extends StatefulWidget {
   final Map<String, dynamic>? matiere;
 

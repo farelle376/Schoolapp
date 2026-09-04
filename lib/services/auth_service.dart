@@ -5,6 +5,8 @@ import 'api_service.dart';
 
 class AuthService {
   final ApiService _api = ApiService();
+
+
   
   // Demander un code de vérification
   Future<bool> requestCode(String phoneNumber) async {
@@ -77,6 +79,65 @@ class AuthService {
     await _api.reloadToken();
     return _api.authToken != null;
   }
+   Future<Map<String, dynamic>> sendProfessorResetCode(String email) async {
+    try {
+      final response = await _api.post('/teacher/forgot-password', {
+        'email': email,
+      });
+      
+      return {
+        'success': response['success'] == true,
+        'message': response['message'] ?? 'Code envoyé avec succès',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Erreur de connexion au serveur: $e',
+      };
+    }
+  }
+
+  // 2. Vérifier le code reçu par email
+  Future<Map<String, dynamic>> verifyProfessorResetCode(String email, String code) async {
+    try {
+      final response = await _api.post('/teacher/verify-code', {
+        'email': email,
+        'code': code,
+      });
+      
+      return {
+        'success': response['success'] == true,
+        'message': response['message'] ?? 'Code valide',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Erreur de vérification: $e',
+      };
+    }
+  }
+
+  // 3. Réinitialiser le mot de passe avec le code
+  Future<Map<String, dynamic>> resetProfessorPassword(String email, String code, String password) async {
+    try {
+      final response = await _api.post('/teacher/reset-password', {
+        'email': email,
+        'code': code,
+        'password': password,
+        'password_confirmation': password, // Laravel attend la confirmation
+      });
+      
+      return {
+        'success': response['success'] == true,
+        'message': response['message'] ?? 'Mot de passe réinitialisé',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Erreur lors de la réinitialisation: $e',
+      };
+    }
+  }
 }
-// lib/services/auth_service.dart
+
 

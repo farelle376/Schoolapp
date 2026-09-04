@@ -1,4 +1,4 @@
-// lib/model/tranche_paiement_model.dart
+// lib/models/tranche_paiement_model.dart
 
 class TranchePaiementModel {
   final int id;
@@ -10,6 +10,7 @@ class TranchePaiementModel {
   final String? dateLimite;
   final String statut;
   final bool estPaye;
+  final int? inscriptionId;
 
   TranchePaiementModel({
     required this.id,
@@ -21,10 +22,10 @@ class TranchePaiementModel {
     this.dateLimite,
     required this.statut,
     required this.estPaye,
+    this.inscriptionId,
   });
 
   factory TranchePaiementModel.fromJson(Map<String, dynamic> json) {
-    // Convertir le montant correctement (peut être String ou double)
     double montantValue = 0.0;
     if (json['montant'] != null) {
       if (json['montant'] is double) {
@@ -46,6 +47,7 @@ class TranchePaiementModel {
       dateLimite: json['date_limite'],
       statut: json['statut']?.toString() ?? 'non_paye',
       estPaye: json['statut'] == 'paye',
+      inscriptionId: json['inscription_id'],
     );
   }
 
